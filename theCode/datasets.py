@@ -28,7 +28,7 @@ else:
 def prepare_data(data):
     imgs, captions, captions_lens, class_ids, keys = data
 
-    # sort data by the length in a decreasing order
+    # sort data by the length in a decreasing order !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MARKER!!!!!!!!!!!!!!!!!!!!!!!!
     sorted_cap_lens, sorted_cap_indices = \
         torch.sort(captions_lens, 0, True)
 

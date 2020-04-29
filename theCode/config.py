@@ -9,7 +9,7 @@ from easydict import EasyDict as edict
 __C = edict()
 cfg = __C
 
-# Dataset name: flowers, birds
+# Dataset name: flowers, birds !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MARKER!!!!!!!!!!!!!!!!!!!!!!!!
 __C.DATASET_NAME = 'birds'
 __C.CONFIG_NAME = ''
 __C.DATA_DIR = ''
