@@ -133,13 +133,19 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
             w_total_loss1 = 0
             start_time = time.time()
             # attention Maps
-            img_set, _ = \
-                build_super_images(imgs[-1].cpu(), captions,
-                                   ixtoword, attn_maps, att_sze)
-            if img_set is not None:
-                im = Image.fromarray(img_set)
-                fullpath = '%s/attention_maps%d.png' % (image_dir, step)
-                im.save(fullpath)
+            #Save image only every 8 epochs && Save it to The Drive
+            if (epoch % 8 == 0):
+                print("bulding images")
+                img_set, _ = \
+                    build_super_images(imgs[-1].cpu(), captions,
+                                    ixtoword, attn_maps, att_sze)
+                if img_set is not None:
+                    im = Image.fromarray(img_set)
+                    fullpath = '%s/attention_maps%d.png' % (image_dir, step)
+                    im.save(fullpath)
+                    mydriveimg = '/content/drive/My Drive/cubImage'
+                    drivepath = '%s/attention_maps%d.png' % (mydriveimg, epoch)
+                    im.save(drivepath)
     print("keyTime |||||||||||||||||||||||||||||||")
     print("train_function_time : " , time.time() - train_function_start_time)
     print("KeyTime |||||||||||||||||||||||||||||||")
@@ -308,12 +314,17 @@ if __name__ == "__main__":
             print("one_epoch_time : " , time.time() - one_epoch_start_time)
             print("KeyTime |||||||||||||||||||||||||||||||")
 
-            if (epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0 or
+            if (epoch % 8 == 0 or#(epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0 or
                 epoch == cfg.TRAIN.MAX_EPOCH):
                 torch.save(image_encoder.state_dict(),
                            '%s/image_encoder%d.pth' % (model_dir, epoch))
+                mydrivemodel = '/content/drive/My Drive/cubModel'
+                torch.save(image_encoder.state_dict(),
+                           '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
                 torch.save(text_encoder.state_dict(),
                            '%s/text_encoder%d.pth' % (model_dir, epoch))
+                torch.save(text_encoder.state_dict(),
+                           '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
                 print('Save G/Ds models.')
                 
     except KeyboardInterrupt:
