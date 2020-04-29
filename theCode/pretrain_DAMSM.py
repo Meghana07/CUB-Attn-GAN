@@ -48,6 +48,7 @@ def parse_args():
 
 def train(dataloader, cnn_model, rnn_model, batch_size,
           labels, optimizer, epoch, ixtoword, image_dir):
+    train_function_start_time = time.time()
     cnn_model.train()
     rnn_model.train()
     s_total_loss0 = 0
@@ -140,6 +141,9 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
                 im = Image.fromarray(img_set)
                 fullpath = '%s/attention_maps%d.png' % (image_dir, step)
                 im.save(fullpath)
+    print("keyTime |||||||||||||||||||||||||||||||")
+    print("train_function_time : " , time.time() - train_function_start_time)
+    print("KeyTime |||||||||||||||||||||||||||||||")
     return count
 
 
@@ -284,6 +288,7 @@ if __name__ == "__main__":
         print("cfg.TRAIN.MAX_EPOCH : " , cfg.TRAIN.MAX_EPOCH )
         print("keyword |||||||||||||||||||||||||||||||")
         for epoch in range(start_epoch, cfg.TRAIN.MAX_EPOCH):
+            one_epoch_start_time = time.time()
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
             count = train(dataloader, image_encoder, text_encoder,
@@ -300,6 +305,10 @@ if __name__ == "__main__":
             if lr > cfg.TRAIN.ENCODER_LR/10.:
                 lr *= 0.98
 
+            print("keyTime |||||||||||||||||||||||||||||||")
+            print("one_epoch_time : " , time.time() - one_epoch_start_time)
+            print("KeyTime |||||||||||||||||||||||||||||||")
+
             if (epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0 or
                 epoch == cfg.TRAIN.MAX_EPOCH):
                 torch.save(image_encoder.state_dict(),
@@ -307,6 +316,7 @@ if __name__ == "__main__":
                 torch.save(text_encoder.state_dict(),
                            '%s/text_encoder%d.pth' % (model_dir, epoch))
                 print('Save G/Ds models.')
+                
     except KeyboardInterrupt:
         print('-' * 89)
         print('Exiting from training early')

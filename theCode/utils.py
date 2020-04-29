@@ -1,5 +1,6 @@
 import os
 import errno
+import time
 import numpy as np
 from torch.nn import init
 
@@ -55,6 +56,7 @@ def build_super_images(real_imgs, captions, ixtoword,
                        attn_maps, att_sze, lr_imgs=None,
                        batch_size=cfg.TRAIN.BATCH_SIZE,
                        max_word_num=cfg.TEXT.WORDS_NUM):
+    build_super_images_start_time = time.time()
     nvis = 8
     real_imgs = real_imgs[:nvis]
     if lr_imgs is not None:
@@ -69,6 +71,10 @@ def build_super_images(real_imgs, captions, ixtoword,
                  (max_word_num + 2) * (vis_size + 2), 3],
                 dtype=np.uint8)
 
+
+    print("keyword |||||||||||||||||||||||||||||||")
+    print("max_word_num : " , max_word_num)
+    print("keyword |||||||||||||||||||||||||||||||")
     for i in range(max_word_num):
         istart = (i + 2) * (vis_size + 2)
         iend = (i + 3) * (vis_size + 2)
@@ -105,7 +111,7 @@ def build_super_images(real_imgs, captions, ixtoword,
 
     bUpdate = 1
     for i in range(num):
-        print ("loop " , i ," of " , num)
+        #print ("loop " , i ," of " , num == 8)
         attn = attn_maps[i].cpu().view(1, -1, att_sze, att_sze)
         # --> 1 x 1 x 17 x 17
         attn_max = attn.max(dim=1, keepdim=True)
@@ -129,7 +135,7 @@ def build_super_images(real_imgs, captions, ixtoword,
         row_beforeNorm = []
         minVglobal, maxVglobal = 1, 0
         for j in range(num_attn):
-            print ("looop " , j , " of " , seq_len+1)
+            #print ("looop " , j , " of " , seq_len+1)
             one_map = attn[j]
             #print("First one map : " , one_map.shape)
             #print("attn.shape : " , attn.shape)
@@ -157,7 +163,7 @@ def build_super_images(real_imgs, captions, ixtoword,
                 maxVglobal = maxV
             #print("seq_len : " , seq_len)
         for j in range(seq_len + 1):
-            print ("loooop " , j , " of " , seq_len+1)
+            #print ("loooop " , j , " of " , seq_len+1)
             
             if j < num_attn:
                 one_map = row_beforeNorm[j]
@@ -262,11 +268,21 @@ def build_super_images(real_imgs, captions, ixtoword,
         row = np.concatenate([txt, row, row_merge], 0)#######################
         img_set.append(row)##################################################
         #####################################################################
+    
+    print("keyword |||||||||||||||||||||||||||||||")
+    print("bUpdate : " , bUpdate)
+    print("keyword |||||||||||||||||||||||||||||||")
     if bUpdate:
         img_set = np.concatenate(img_set, 0)
         img_set = img_set.astype(np.uint8)
+        print("keyTime |||||||||||||||||||||||||||||||")
+        print("build_super_images_time : " , time.time() - build_super_images_start_time)
+        print("KeyTime |||||||||||||||||||||||||||||||")
         return img_set, sentences
     else:
+        print("keyTime |||||||||||||||||||||||||||||||")
+        print("build_super_images_start_time : " , time.time() - build_super_images_start_time)
+        print("KeyTime |||||||||||||||||||||||||||||||")
         return None
 
 
