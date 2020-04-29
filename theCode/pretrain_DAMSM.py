@@ -57,7 +57,6 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
     w_total_loss1 = 0
     
     print("keyword |||||||||||||||||||||||||||||||")
-    print("count : " , count)
     print("len(dataloader) : " , len(dataloader) )
     print(" count = " ,  (epoch + 1) * len(dataloader)  )
     print("keyword |||||||||||||||||||||||||||||||")
