@@ -106,13 +106,13 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         if step % UPDATE_INTERVAL == 0:
             count = epoch * len(dataloader) + step
 
-            print ("====================================================")
-            print ("s_total_loss0 : " , s_total_loss0)
-            print ("s_total_loss0.item() : " , s_total_loss0.item())
-            print ("UPDATE_INTERVAL : " , UPDATE_INTERVAL)
-            print ("s_total_loss0.item()/UPDATE_INTERVAL : " , s_total_loss0.item()/UPDATE_INTERVAL)
-            print ("s_total_loss0/UPDATE_INTERVAL : " , s_total_loss0/UPDATE_INTERVAL)
-            print ("=====================================================")
+            # print ("====================================================")
+            # print ("s_total_loss0 : " , s_total_loss0)
+            # print ("s_total_loss0.item() : " , s_total_loss0.item())
+            # print ("UPDATE_INTERVAL : " , UPDATE_INTERVAL)
+            # print ("s_total_loss0.item()/UPDATE_INTERVAL : " , s_total_loss0.item()/UPDATE_INTERVAL)
+            # print ("s_total_loss0/UPDATE_INTERVAL : " , s_total_loss0/UPDATE_INTERVAL)
+            # print ("=====================================================")
             s_cur_loss0 = s_total_loss0.item() / UPDATE_INTERVAL
             s_cur_loss1 = s_total_loss1.item() / UPDATE_INTERVAL
 

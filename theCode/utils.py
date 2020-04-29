@@ -72,9 +72,9 @@ def build_super_images(real_imgs, captions, ixtoword,
                 dtype=np.uint8)
 
 
-    print("keyword |||||||||||||||||||||||||||||||")
-    print("max_word_num : " , max_word_num)
-    print("keyword |||||||||||||||||||||||||||||||")
+    # print("keyword |||||||||||||||||||||||||||||||")
+    # print("max_word_num : " , max_word_num)
+    # print("keyword |||||||||||||||||||||||||||||||")
     for i in range(max_word_num):
         istart = (i + 2) * (vis_size + 2)
         iend = (i + 3) * (vis_size + 2)
@@ -269,9 +269,9 @@ def build_super_images(real_imgs, captions, ixtoword,
         img_set.append(row)##################################################
         #####################################################################
     
-    print("keyword |||||||||||||||||||||||||||||||")
-    print("bUpdate : " , bUpdate)
-    print("keyword |||||||||||||||||||||||||||||||")
+    # print("keyword |||||||||||||||||||||||||||||||")
+    # print("bUpdate : " , bUpdate)
+    # print("keyword |||||||||||||||||||||||||||||||")
     if bUpdate:
         img_set = np.concatenate(img_set, 0)
         img_set = img_set.astype(np.uint8)
