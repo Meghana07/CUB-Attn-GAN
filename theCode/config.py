@@ -35,7 +35,7 @@ __C.TRAIN.GENERATOR_LR = 2e-4
 __C.TRAIN.ENCODER_LR = 2e-4
 __C.TRAIN.RNN_GRAD_CLIP = 0.25
 __C.TRAIN.FLAG = True
-__C.TRAIN.NET_E = '/content/text_encoder50.pth'
+__C.TRAIN.NET_E = '/content/text_encoder272.pth'
 __C.TRAIN.NET_G = ''
 __C.TRAIN.B_NET_D = True
 
