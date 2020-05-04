@@ -310,7 +310,7 @@ if __name__ == "__main__":
                       '{:5.2f} {:5.2f} | lr {:.5f}|'
                       .format(epoch, s_loss, w_loss, lr))
             print('-' * 89)
-            if lr > 0.0002 #cfg.TRAIN.ENCODER_LR/10.:
+            if lr > 0.0002 : #cfg.TRAIN.ENCODER_LR/10.:
                 lr *= 0.98
 
             print("keyTime |||||||||||||||||||||||||||||||")
