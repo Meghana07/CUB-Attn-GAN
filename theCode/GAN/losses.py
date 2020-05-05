@@ -181,10 +181,10 @@ def generator_loss(netsD, image_encoder, fake_imgs, real_labels,
             g_loss = cond_errG
         errG_total += g_loss
         # err_img = errG_total.data[0]
-        print("----------------------------------------------------------")
-        print("g_loss : " , g_loss)
-        print("g_loss.item() : " , g_loss.item())
-        print("----------------------------------------------------------")
+        #print("----------------------------------------------------------")
+        #print("g_loss : " , g_loss)
+        #print("g_loss.item() : " , g_loss.item())
+        #print("----------------------------------------------------------")
         logs += 'g_loss%d: %.2f ' % (i, g_loss.item())
 
         # Ranking loss

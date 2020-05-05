@@ -274,10 +274,10 @@ class condGANTrainer(object):
                     errD.backward()
                     optimizersD[i].step()
                     errD_total += errD
-                    print("----------------------------------------------------------")
-                    print("errD : " , errD)
-                    print("errD.item() : " , errD.item())
-                    print("----------------------------------------------------------")
+                    #print("----------------------------------------------------------")
+                    #print("errD : " , errD)
+                    #print("errD.item() : " , errD.item())
+                    #print("----------------------------------------------------------")
                     D_logs += 'errD%d: %.2f ' % (i, errD.item())
 
                 #######################################################
@@ -322,7 +322,7 @@ class condGANTrainer(object):
             print('''[%d/%d][%d]
                   Loss_D: %.2f Loss_G: %.2f Time: %.2fs'''
                   % (epoch, self.max_epoch, self.num_batches,
-                     errD_total.data[0], errG_total.data[0],
+                     errD_total.item(), errG_total.item(),
                      end_t - start_t))
 
             if epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0:  # and epoch != 0:
