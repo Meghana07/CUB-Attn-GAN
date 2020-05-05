@@ -317,8 +317,7 @@ if __name__ == "__main__":
             print("one_epoch_time : " , time.time() - one_epoch_start_time)
             print("KeyTime |||||||||||||||||||||||||||||||")
 
-            if (epoch % 8 == 0 or#(epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0 or
-                epoch == cfg.TRAIN.MAX_EPOCH):
+            if (epoch % 8 == 0 or epoch == cfg.TRAIN.MAX_EPOCH or epoch == cfg.TRAIN.MAX_EPOCH-1 ):
                 torch.save(image_encoder.state_dict(),
                            '%s/image_encoder%d.pth' % (model_dir, epoch))
                 mydrivemodel = '/content/drive/My Drive/cubModel'
@@ -333,3 +332,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print('-' * 89)
         print('Exiting from training early')
+
