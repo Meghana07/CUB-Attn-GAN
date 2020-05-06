@@ -241,6 +241,7 @@ class condGANTrainer(object):
 
                 ######################################################
                 # (1) Prepare training data and Compute text embeddings
+                prepare_training_time = time.time()
                 ######################################################
                 data = data_iter.next()
                 imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
@@ -254,7 +255,7 @@ class condGANTrainer(object):
                 num_words = words_embs.size(2)
                 if mask.size(1) > num_words:
                     mask = mask[:, :num_words]
-
+                print ("Prepare training data and Compute text embeddings time : " , time.time()-prepare_training_time)
                 #######################################################
                 # (2) Generate fake images
                 ######################################################
