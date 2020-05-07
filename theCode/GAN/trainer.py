@@ -322,9 +322,9 @@ class condGANTrainer(object):
                 for p, avg_p in zip(netG.parameters(), avg_param_G):
                     avg_p.mul_(0.999).add_(0.001, p.data)
 
-                print ('4.update_network_G_time : ' ,time.time() -  update_network_G_time)
+                #print ('4.update_network_G_time : ' ,time.time() -  update_network_G_time)
 
-                print ('gen_iterations : ' , gen_iterations)
+                #print ('gen_iterations : ' , gen_iterations)
                 if gen_iterations % 100 == 0:
                     print("step : " , gen_iterations, "iters_100_time : " time.time() - iters_100_time)
                     #print(D_logs + '\n' + G_logs)
