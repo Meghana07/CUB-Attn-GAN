@@ -326,12 +326,12 @@ class condGANTrainer(object):
 
                 #print ('gen_iterations : ' , gen_iterations)
                 if gen_iterations % 100 == 0:
-                    print("step : " , gen_iterations, "iters_100_time : " time.time() - iters_100_time)
+                    print("step : " , gen_iterations, "iters_100_time : " , time.time() - iters_100_time)
                     #print(D_logs + '\n' + G_logs)
                     iters_100_time = time.time()
                 # save images
                 if gen_iterations % 1000 == 0:
-                    print("step : " , gen_iterations, "iters_1000_time : " time.time() - iters_1000_time)
+                    print("step : " , gen_iterations, "iters_1000_time : " , time.time() - iters_1000_time)
                     backup_para = copy_G_params(netG)
                     load_params(netG, avg_param_G)
                     self.save_img_results(netG, fixed_noise, sent_emb,
