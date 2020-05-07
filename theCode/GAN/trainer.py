@@ -243,7 +243,7 @@ class condGANTrainer(object):
             step = 0
 
             iters_100_time = time.time()
-            iters_1000_time = time.time()
+            iters_5000_time = time.time()
 
             print ('num_batches : ' , self.num_batches )
             while step < self.num_batches:
@@ -330,15 +330,15 @@ class condGANTrainer(object):
                     #print(D_logs + '\n' + G_logs)
                     iters_100_time = time.time()
                 # save images
-                if gen_iterations % 1000 == 0:
-                    print("step : " , gen_iterations, "iters_1000_time : " , time.time() - iters_1000_time)
+                if gen_iterations % 5000 == 0:
+                    print("step : " , gen_iterations, "iters_5000_time : " , time.time() - iters_5000_time)
                     backup_para = copy_G_params(netG)
                     load_params(netG, avg_param_G)
                     self.save_img_results(netG, fixed_noise, sent_emb,
                                           words_embs, mask, image_encoder,
                                           captions, cap_lens, epoch, name='average')
                     load_params(netG, backup_para)
-                    iters_1000_time = time.time()
+                    iters_5000_time = time.time()
 
                     #
                     # self.save_img_results(netG, fixed_noise, sent_emb,
