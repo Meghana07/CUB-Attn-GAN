@@ -298,7 +298,7 @@ class condGANTrainer(object):
                 print ('3.update_network_D_time : ' ,time.time() -  update_network_D_time)
                 #######################################################
                 # (4) Update G network: maximize log(D(G(z)))
-                update_network_G_time
+                update_network_G_time = time.time()
                 ######################################################
                 # compute total loss for training G
                 step += 1
