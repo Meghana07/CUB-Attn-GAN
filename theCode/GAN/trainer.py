@@ -159,14 +159,15 @@ class condGANTrainer(object):
     def save_model(self, netG, avg_param_G, netsD, epoch):
         backup_para = copy_G_params(netG)
         load_params(netG, avg_param_G)
-        torch.save(netG.state_dict(),
-            '%s/netG_epoch_%d.pth' % (self.model_dir, epoch))
+        myDriveAttnGanModel = '/content/drive/My Drive/cubModelGAN'
+        torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (self.model_dir, epoch))
+        torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (myDriveAttnGanModel, epoch))
         load_params(netG, backup_para)
         #
         for i in range(len(netsD)):
             netD = netsD[i]
-            torch.save(netD.state_dict(),
-                '%s/netD%d.pth' % (self.model_dir, i))
+            torch.save(netD.state_dict(), '%s/netD%d.pth' % (self.model_dir, i))
+            torch.save(netD.state_dict(), '%s/netD%d.pth' % (myDriveAttnGanModel, i))
         print('Save G/Ds models.')
 
     def set_requires_grad_value(self, models_list, brequires):
@@ -193,9 +194,11 @@ class condGANTrainer(object):
                                    attn_maps, att_sze, lr_imgs=lr_img)
             if img_set is not None:
                 im = Image.fromarray(img_set)
-                fullpath = '%s/G_%s_%d_%d.png'\
-                    % (self.image_dir, name, gen_iterations, i)
+                myDriveAttnGanImage = '/content/drive/My Drive/cubImageGAN'
+                fullpath = '%s/G_%s_%d_%d.png' % (self.image_dir, name, gen_iterations, i)
+                fullpathDrive = '%s/G_%s_%d_%d.png' % (myDriveAttnGanImage, name, gen_iterations, i)
                 im.save(fullpath)
+                im.save(fullpathDrive)
 
         # for i in range(len(netsD)):
         i = -1
@@ -211,9 +214,12 @@ class condGANTrainer(object):
                                captions, self.ixtoword, att_maps, att_sze)
         if img_set is not None:
             im = Image.fromarray(img_set)
-            fullpath = '%s/D_%s_%d.png'\
-                % (self.image_dir, name, gen_iterations)
+            myDriveAttnGanImage = '/content/drive/My Drive/cubImageGAN'
+            fullpath = '%s/D_%s_%d.png' % (self.image_dir, name, gen_iterations)
+            fullpathDrive = '%s/D_%s_%d.png' % (myDriveAttnGanImage, name, gen_iterations)
             im.save(fullpath)
+            im.save(fullpathDrive)
+            
 
     def train(self):
         text_encoder, image_encoder, netG, netsD, start_epoch = self.build_models()
@@ -235,7 +241,12 @@ class condGANTrainer(object):
 
             data_iter = iter(self.data_loader)
             step = 0
+
+            print ('format : ' ,  )
+
+            print ('num_batches : ' , self.num_batches )
             while step < self.num_batches:
+                print('step : ', step)
                 # reset requires_grad to be trainable for all Ds
                 # self.set_requires_grad_value(netsD, True)
 
@@ -255,15 +266,18 @@ class condGANTrainer(object):
                 num_words = words_embs.size(2)
                 if mask.size(1) > num_words:
                     mask = mask[:, :num_words]
-                print ("Prepare training data and Compute text embeddings time : " , time.time()-prepare_training_time)
+                print ("1. Prepare training data and Compute text embeddings time : " , time.time()-prepare_training_time)
                 #######################################################
                 # (2) Generate fake images
+                generate_fake_images_time = time.time()
                 ######################################################
                 noise.data.normal_(0, 1)
                 fake_imgs, _, mu, logvar = netG(noise, sent_emb, words_embs, mask)
+                print ('2.generate_fake_images_time : ' ,time.time() -  generate_fake_images_time)
 
                 #######################################################
                 # (3) Update D network
+                update_network_D_time = time.time()
                 ######################################################
                 errD_total = 0
                 D_logs = ''
@@ -280,9 +294,11 @@ class condGANTrainer(object):
                     #print("errD.item() : " , errD.item())
                     #print("----------------------------------------------------------")
                     D_logs += 'errD%d: %.2f ' % (i, errD.item())
-
+                
+                print ('3.update_network_D_time : ' ,time.time() -  update_network_D_time)
                 #######################################################
                 # (4) Update G network: maximize log(D(G(z)))
+                update_network_G_time
                 ######################################################
                 # compute total loss for training G
                 step += 1
@@ -300,9 +316,13 @@ class condGANTrainer(object):
                 # backward and update parameters
                 errG_total.backward()
                 optimizerG.step()
+                
                 for p, avg_p in zip(netG.parameters(), avg_param_G):
                     avg_p.mul_(0.999).add_(0.001, p.data)
 
+                print ('4.update_network_G_time : ' ,time.time() -  update_network_G_time)
+
+                print ('gen_iterations : ' , gen_iterations)
                 if gen_iterations % 100 == 0:
                     print(D_logs + '\n' + G_logs)
                 # save images
