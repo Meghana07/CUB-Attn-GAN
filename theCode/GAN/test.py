@@ -8,16 +8,21 @@ NET_E = "text_encoder599.pth"
 B_DCGAN = False
 GF_DIM = 128
 CONDITION_DIM = 100
+BRANCH_NUM = 3
+R_NUM = 2
+Z_DIM = 100
 ###########
 
 ###Imports Part###
+import os
 import numpy as np
 import pickle
 from nltk.tokenize import RegexpTokenizer
-import os
 from collections import defaultdict
+from PIL import Image
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 ############
 
 ###Generate Examples###
@@ -107,7 +112,13 @@ with open(filepath, "r") as f:
             print("data_dic", data_dic)
 
 
-def gen_example(self, data_dic):
+
+gen_example(data_dic)
+
+
+###utils functions###
+
+def gen_example(data_dic):
     if NET_G == '':
         print('Error: the path for models is not found!')
     else:
@@ -121,12 +132,12 @@ def gen_example(self, data_dic):
         text_encoder.eval()
 
         # the path to save generated images
-        if cfg.GAN.B_DCGAN:
+        if B_DCGAN:
             netG = G_DCGAN()
         else:
             netG = G_NET()
-        s_tmp = cfg.TRAIN.NET_G[:cfg.TRAIN.NET_G.rfind('.pth')]
-        model_dir = cfg.TRAIN.NET_G
+        s_tmp = NET_G[:NET_G.rfind('.pth')]
+        model_dir = NET_G
         state_dict = \
             torch.load(model_dir, map_location=lambda storage, loc: storage)
         netG.load_state_dict(state_dict)
@@ -139,15 +150,14 @@ def gen_example(self, data_dic):
             captions, cap_lens, sorted_indices = data_dic[key]
 
             batch_size = captions.shape[0]
-            nz = cfg.GAN.Z_DIM
+            nz = Z_DIM
             captions = Variable(torch.from_numpy(captions), volatile=True)
             cap_lens = Variable(torch.from_numpy(cap_lens), volatile=True)
 
             captions = captions.cuda()
             cap_lens = cap_lens.cuda()
             for i in range(1):  # 16
-                noise = Variable(torch.FloatTensor(batch_size, nz),
-                                 volatile=True)
+                noise = Variable(torch.FloatTensor(batch_size, nz), volatile=True)
                 noise = noise.cuda()
                 #######################################################
                 # (1) Extract text embeddings
@@ -162,7 +172,7 @@ def gen_example(self, data_dic):
                 ######################################################
                 noise.data.normal_(0, 1)
                 fake_imgs, attention_maps, _, _ = netG(noise, sent_emb,
-                                                       words_embs, mask)
+                                                        words_embs, mask)
                 # G attention
                 cap_lens_np = cap_lens.cpu().data.numpy()
                 for j in range(batch_size):
@@ -188,12 +198,133 @@ def gen_example(self, data_dic):
                         img_set, sentences = \
                             build_super_images2(im[j].unsqueeze(0),
                                                 captions[j].unsqueeze(0),
-                                                [cap_lens_np[j]], self.ixtoword,
+                                                [cap_lens_np[j]], wordtoix,
                                                 [attn_maps[j]], att_sze)
                         if img_set is not None:
                             im = Image.fromarray(img_set)
                             fullpath = '%s_a%d.png' % (save_name, k)
                             im.save(fullpath)
+
+
+
+
+def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
+                        attn_maps, att_sze, vis_size=256, topK=5):
+    batch_size = real_imgs.size(0)
+    max_word_num = np.max(cap_lens)
+    text_convas = np.ones([batch_size * FONT_MAX,
+                           max_word_num * (vis_size + 2), 3],
+                           dtype=np.uint8)
+
+    real_imgs = \
+        nn.Upsample(size=(vis_size, vis_size), mode='bilinear')(real_imgs)
+    # [-1, 1] --> [0, 1]
+    real_imgs.add_(1).div_(2).mul_(255)
+    real_imgs = real_imgs.data.numpy()
+    # b x c x h x w --> b x h x w x c
+    real_imgs = np.transpose(real_imgs, (0, 2, 3, 1))
+    pad_sze = real_imgs.shape
+    middle_pad = np.zeros([pad_sze[2], 2, 3])
+
+    # batch x seq_len x 17 x 17 --> batch x 1 x 17 x 17
+    img_set = []
+    num = len(attn_maps)
+
+    text_map, sentences = \
+        drawCaption(text_convas, captions, ixtoword, vis_size, off1=0)
+    text_map = np.asarray(text_map).astype(np.uint8)
+
+    bUpdate = 1
+    for i in range(num):
+        attn = attn_maps[i].cpu().view(1, -1, att_sze, att_sze)
+        #
+        attn = attn.view(-1, 1, att_sze, att_sze)
+        attn = attn.repeat(1, 3, 1, 1).data.numpy()
+        # n x c x h x w --> n x h x w x c
+        attn = np.transpose(attn, (0, 2, 3, 1))
+        num_attn = cap_lens[i]
+        thresh = 2./float(num_attn)
+        #
+        img = real_imgs[i]
+        row = []
+        row_merge = []
+        row_txt = []
+        row_beforeNorm = []
+        conf_score = []
+        for j in range(num_attn):
+            one_map = attn[j]
+            mask0 = one_map > (2. * thresh)
+            conf_score.append(np.sum(one_map * mask0))
+            mask = one_map > thresh
+            one_map = one_map * mask
+            if (vis_size // att_sze) > 1:
+                one_map = \
+                    skimage.transform.pyramid_expand(one_map, sigma=20,
+                                                     upscale=vis_size // att_sze)
+            minV = one_map.min()
+            maxV = one_map.max()
+            one_map = (one_map - minV) / (maxV - minV)
+            row_beforeNorm.append(one_map)
+        sorted_indices = np.argsort(conf_score)[::-1]
+
+        for j in range(num_attn):
+            one_map = row_beforeNorm[j]
+            one_map *= 255
+            #
+            PIL_im = Image.fromarray(np.uint8(img))
+            PIL_att = Image.fromarray(np.uint8(one_map))
+            merged = \
+                Image.new('RGBA', (vis_size, vis_size), (0, 0, 0, 0))
+            mask = Image.new('L', (vis_size, vis_size), (180))  # (210)
+            merged.paste(PIL_im, (0, 0))
+            merged.paste(PIL_att, (0, 0), mask)
+            merged = np.array(merged)[:, :, :3]
+
+            row.append(np.concatenate([one_map, middle_pad], 1))
+            #
+            row_merge.append(np.concatenate([merged, middle_pad], 1))
+            #
+            txt = text_map[i * FONT_MAX:(i + 1) * FONT_MAX,
+                           j * (vis_size + 2):(j + 1) * (vis_size + 2), :]
+            row_txt.append(txt)
+        # reorder
+        row_new = []
+        row_merge_new = []
+        txt_new = []
+        for j in range(num_attn):
+            idx = sorted_indices[j]
+            row_new.append(row[idx])
+            row_merge_new.append(row_merge[idx])
+            txt_new.append(row_txt[idx])
+        row = np.concatenate(row_new[:topK], 1)
+        row_merge = np.concatenate(row_merge_new[:topK], 1)
+        txt = np.concatenate(txt_new[:topK], 1)
+        if txt.shape[1] != row.shape[1]:
+            print('Warnings: txt', txt.shape, 'row', row.shape,
+                  'row_merge_new', row_merge_new.shape)
+            bUpdate = 0
+            break
+        row = np.concatenate([txt, row_merge], 0)
+        img_set.append(row)
+    if bUpdate:
+        img_set = np.concatenate(img_set, 0)
+        img_set = img_set.astype(np.uint8)
+        return img_set, sentences
+    else:
+        return None
+
+
+
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc:  # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
+
+
 
 
 ###Class of Models###
@@ -230,18 +361,18 @@ class RNN_ENCODER(nn.Module):
             # dropout: If non-zero, introduces a dropout layer on
             # the outputs of each RNN layer except the last layer
             self.rnn = nn.LSTM(self.ninput,
-                               self.nhidden,
-                               self.nlayers,
-                               batch_first=True,
-                               dropout=self.drop_prob,
-                               bidirectional=self.bidirectional)
+                                self.nhidden,
+                                self.nlayers,
+                                batch_first=True,
+                                dropout=self.drop_prob,
+                                bidirectional=self.bidirectional)
         elif self.rnn_type == 'GRU':
             self.rnn = nn.GRU(self.ninput,
-                              self.nhidden,
-                              self.nlayers,
-                              batch_first=True,
-                              dropout=self.drop_prob,
-                              bidirectional=self.bidirectional)
+                                self.nhidden,
+                                self.nlayers,
+                                batch_first=True,
+                                dropout=self.drop_prob,
+                                bidirectional=self.bidirectional)
         else:
             raise NotImplementedError
 
@@ -301,8 +432,8 @@ class CA_NET(nn.Module):
     # (https://github.com/pytorch/examples/blob/master/vae/main.py)
     def __init__(self):
         super(CA_NET, self).__init__()
-        self.t_dim = cfg.TEXT.EMBEDDING_DIM
-        self.c_dim = cfg.GAN.CONDITION_DIM
+        self.t_dim = EMBEDDING_DIM
+        self.c_dim = CONDITION_DIM
         self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
         self.relu = GLU()
 
@@ -318,22 +449,176 @@ class GLU(nn.Module):
         return x[:, :nc] * F.sigmoid(x[:, nc:])
 
 
+class INIT_STAGE_G(nn.Module):
+    def __init__(self, ngf, ncf):
+        super(INIT_STAGE_G, self).__init__()
+        self.gf_dim = ngf
+        self.in_dim = cfg.GAN.Z_DIM + ncf  # cfg.TEXT.EMBEDDING_DIM
+
+        self.define_module()
+
+    def define_module(self):
+        nz, ngf = self.in_dim, self.gf_dim
+        self.fc = nn.Sequential(
+            nn.Linear(nz, ngf * 4 * 4 * 2, bias=False),
+            nn.BatchNorm1d(ngf * 4 * 4 * 2),
+            GLU())
+
+        self.upsample1 = upBlock(ngf, ngf // 2)
+        self.upsample2 = upBlock(ngf // 2, ngf // 4)
+        self.upsample3 = upBlock(ngf // 4, ngf // 8)
+        self.upsample4 = upBlock(ngf // 8, ngf // 16)
+
+    def forward(self, z_code, c_code):
+        """
+        :param z_code: batch x cfg.GAN.Z_DIM
+        :param c_code: batch x cfg.TEXT.EMBEDDING_DIM
+        :return: batch x ngf/16 x 64 x 64
+        """
+        c_z_code = torch.cat((c_code, z_code), 1)
+        # state size ngf x 4 x 4
+        out_code = self.fc(c_z_code)
+        out_code = out_code.view(-1, self.gf_dim, 4, 4)
+        # state size ngf/3 x 8 x 8
+        out_code = self.upsample1(out_code)
+        # state size ngf/4 x 16 x 16
+        out_code = self.upsample2(out_code)
+        # state size ngf/8 x 32 x 32
+        out_code32 = self.upsample3(out_code)
+        # state size ngf/16 x 64 x 64
+        out_code64 = self.upsample4(out_code32)
+
+        return out_code64
+
+
+class GET_IMAGE_G(nn.Module):
+    def __init__(self, ngf):
+        super(GET_IMAGE_G, self).__init__()
+        self.gf_dim = ngf
+        self.img = nn.Sequential(
+            conv3x3(ngf, 3),
+            nn.Tanh()
+        )
+
+    def forward(self, h_code):
+        out_img = self.img(h_code)
+        return out_img
+
+
+def conv1x1(in_planes, out_planes):
+    "1x1 convolution with padding"
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1,
+                    padding=0, bias=False)
+
+
+class GlobalAttentionGeneral(nn.Module):
+    def __init__(self, idf, cdf):
+        super(GlobalAttentionGeneral, self).__init__()
+        self.conv_context = conv1x1(cdf, idf)
+        self.sm = nn.Softmax()
+        self.mask = None
+
+    def applyMask(self, mask):
+        self.mask = mask  # batch x sourceL
+
+    def forward(self, input, context):
+        """
+            input: batch x idf x ih x iw (queryL=ihxiw)
+            context: batch x cdf x sourceL
+        """
+        ih, iw = input.size(2), input.size(3)
+        queryL = ih * iw
+        batch_size, sourceL = context.size(0), context.size(2)
+
+        # --> batch x queryL x idf
+        target = input.view(batch_size, -1, queryL)
+        targetT = torch.transpose(target, 1, 2).contiguous()
+        # batch x cdf x sourceL --> batch x cdf x sourceL x 1
+        sourceT = context.unsqueeze(3)
+        # --> batch x idf x sourceL
+        sourceT = self.conv_context(sourceT).squeeze(3)
+
+        # Get attention
+        # (batch x queryL x idf)(batch x idf x sourceL)
+        # -->batch x queryL x sourceL
+        attn = torch.bmm(targetT, sourceT)
+        # --> batch*queryL x sourceL
+        attn = attn.view(batch_size*queryL, sourceL)
+        if self.mask is not None:
+            # batch_size x sourceL --> batch_size*queryL x sourceL
+            mask = self.mask.repeat(queryL, 1)
+            attn.data.masked_fill_(mask.data, -float('inf'))
+        attn = self.sm(attn)  # Eq. (2)
+        # --> batch x queryL x sourceL
+        attn = attn.view(batch_size, queryL, sourceL)
+        # --> batch x sourceL x queryL
+        attn = torch.transpose(attn, 1, 2).contiguous()
+
+        # (batch x idf x sourceL)(batch x sourceL x queryL)
+        # --> batch x idf x queryL
+        weightedContext = torch.bmm(sourceT, attn)
+        weightedContext = weightedContext.view(batch_size, -1, ih, iw)
+        attn = attn.view(batch_size, -1, ih, iw)
+
+        return weightedContext, attn
+
+
+class NEXT_STAGE_G(nn.Module):
+    def __init__(self, ngf, nef, ncf):
+        super(NEXT_STAGE_G, self).__init__()
+        self.gf_dim = ngf
+        self.ef_dim = nef
+        self.cf_dim = ncf
+        self.num_residual = R_NUM
+        self.define_module()
+
+    def _make_layer(self, block, channel_num):
+        layers = []
+        for i in range(R_NUM):
+            layers.append(block(channel_num))
+        return nn.Sequential(*layers)
+
+    def define_module(self):
+        ngf = self.gf_dim
+        self.att = GlobalAttentionGeneral(ngf, self.ef_dim)
+        self.residual = self._make_layer(ResBlock, ngf * 2)
+        self.upsample = upBlock(ngf * 2, ngf)
+
+    def forward(self, h_code, c_code, word_embs, mask):
+        """
+            h_code1(query):  batch x idf x ih x iw (queryL=ihxiw)
+            word_embs(context): batch x cdf x sourceL (sourceL=seq_len)
+            c_code1: batch x idf x queryL
+            att1: batch x sourceL x queryL
+        """
+        self.att.applyMask(mask)
+        c_code, att = self.att(h_code, word_embs)
+        h_c_code = torch.cat((h_code, c_code), 1)
+        out_code = self.residual(h_c_code)
+
+        # state size ngf/2 x 2in_size x 2in_size
+        out_code = self.upsample(out_code)
+
+        return out_code, att
+
+
+
 class G_NET(nn.Module):
     def __init__(self):
         super(G_NET, self).__init__()
-        ngf = cfg.GAN.GF_DIM
-        nef = cfg.TEXT.EMBEDDING_DIM
-        ncf = cfg.GAN.CONDITION_DIM
+        ngf = GF_DIM
+        nef = EMBEDDING_DIM
+        ncf = CONDITION_DIM
         self.ca_net = CA_NET()
 
-        if cfg.TREE.BRANCH_NUM > 0:
+        if BRANCH_NUM > 0:
             self.h_net1 = INIT_STAGE_G(ngf * 16, ncf)
             self.img_net1 = GET_IMAGE_G(ngf)
         # gf x 64 x 64
-        if cfg.TREE.BRANCH_NUM > 1:
+        if BRANCH_NUM > 1:
             self.h_net2 = NEXT_STAGE_G(ngf, nef, ncf)
             self.img_net2 = GET_IMAGE_G(ngf)
-        if cfg.TREE.BRANCH_NUM > 2:
+        if BRANCH_NUM > 2:
             self.h_net3 = NEXT_STAGE_G(ngf, nef, ncf)
             self.img_net3 = GET_IMAGE_G(ngf)
 
@@ -371,11 +656,7 @@ class G_NET(nn.Module):
         return fake_imgs, att_maps, mu, logvar
 
 
-gen_example(data_dic)
 
-import os
-
-from collections import defaultdict
 
 #def build_dictionary(self, train_captions, test_captions):
 #    word_counts = defaultdict(float)
@@ -418,3 +699,10 @@ from collections import defaultdict
 #         train_captions_new, test_captions_new, ixtoword, wordtoix,
 #         len(ixtoword)
 #     ]
+
+
+
+########################
+
+# !cp  /content/AttnGAN/DAMSMencoders/bird/text_encoder599.pth /content/ 
+# !cp /content/AttnGAN/DAMSMencoders/bird/image_encoder599.pth /content/
