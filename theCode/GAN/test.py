@@ -6,12 +6,23 @@ WORDS_NUM = 18
 RNN_TYPE = 'LSTM'
 NET_E = "text_encoder599.pth"
 B_DCGAN = False
-GF_DIM = 128
+GF_DIM = 32
 CONDITION_DIM = 100
 BRANCH_NUM = 3
 R_NUM = 2
 Z_DIM = 100
+CUDA = True
+FONT_MAX = 50
 ###########
+
+
+# from easydict import EasyDict as edict
+# __C = edict()
+# cfg = __C
+# __C.GAN = edict()
+# cfg.GAN.Z_DIM = 100
+
+
 
 ###Imports Part###
 import os
@@ -23,97 +34,12 @@ from PIL import Image
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import torch.nn.functional as F
+from PIL import Image, ImageDraw, ImageFont
 ############
 
-###Generate Examples###
 
-filepath = 'captions.pickle'  # Load captions.pickle contain four parts :
-#captions[0] : train_captions, 88550 caption each of different length of words (9-25),each word represented by unique index
-#captions[1] : test_captions , 29330 caption each of different length of words (9-25),each word represented by unique index
-#captions[2] : index to word dictionary that maps 5450 indexes[key] to words[value]
-#captions[3] : word to index dictionary that maps 5450 words[key] to indexes[value]
-
-with open(filepath, 'rb') as f:
-    x = pickle.load(f)
-    wordtoix = x[3]
-    del x
-    n_words = len(wordtoix)
-    print("number of words : ", n_words)
-
-algo = ''
-filepath = 'example_filenames.txt'
-#a group of example filenames, 24 names for 24 file, each file with a number of captions
-
-data_dic = {}  # dictionary used to generate images from captions
-#key : name of file from which we got captions
-#value: [padded-sorted_based_on_length-indexed captions, original length of each(before padding, indexes to order based on length)
-
-with open(filepath, "r") as f:
-    filenames = f.read().split('\n')
-    for name in filenames:
-        if name == "example_captions":  #Keep this way until you download the rest of the file captions
-            if len(name) == 0:
-                continue
-            filepath = '%s.txt' % (name)
-            with open(filepath, "r") as f:
-                print('Load from:', name)
-                sentences = f.read().split('\n')
-                # split your text file of 16 captions to a list of 16 string entries
-                print("sentences : ", sentences)
-                captions = []
-                cap_lens = []
-                for sent in sentences:
-                    if len(sent) == 0:
-                        continue
-                    sent = sent.replace("\ufffd\ufffd", " ")
-                    tokenizer = RegexpTokenizer(r'\w+')
-                    tokens = tokenizer.tokenize(sent.lower())
-                    #convert a single sentence(string) to list of tokens(words)=>result in a list of string entries that are word that make up the original sentence(caption)
-                    print("tokens : ", tokens)
-                    if len(tokens) == 0:
-                        print('sent', sent)
-                        continue
-
-                    rev = []
-                    for t in tokens:
-                        t = t.encode('ascii', 'ignore').decode('ascii')
-                        if len(t) > 0 and t in wordtoix:
-                            rev.append(wordtoix[t])
-                            #convert the list of words to a list crosspending indexes
-                    captions.append(rev)  # all captions in the file
-                    cap_lens.append(len(rev))
-                    # the length(number of words/tokens) in each caption
-            max_len = np.max(cap_lens)  # used to pad shorter captions
-            print("captions : ", captions)
-            print("number of captions : ", len(captions))
-            print("max_len : ", max_len)
-            print("cap_lens : ", cap_lens)
-
-            sorted_indices = np.argsort(cap_lens)[::-1]
-            # Returns the indices that would sort the array of lengths.
-            print("sorted_indices : ", sorted_indices)
-            cap_lens = np.asarray(cap_lens)
-            cap_lens = cap_lens[sorted_indices]
-            # sort the array of lengths using the sotring indices
-            print("sorted cap_lens : ", cap_lens)
-            cap_array = np.zeros(
-                (len(captions), max_len), dtype='int64'
-            )  #placeholder for the padded sorted array caption
-            for i in range(len(captions)):
-                idx = sorted_indices[i]
-                cap = captions[idx]
-                c_len = len(cap)
-                cap_array[i, :c_len] = cap
-            print("padded sorted array caption : ", cap_array)
-            key = name[(name.rfind('/') + 1):]
-            print("name : ", name)
-            print("key : ", key)
-            data_dic[key] = [cap_array, cap_lens, sorted_indices]
-            print("data_dic", data_dic)
-
-
-
-gen_example(data_dic)
 
 
 ###utils functions###
@@ -138,6 +64,7 @@ def gen_example(data_dic):
             netG = G_NET()
         s_tmp = NET_G[:NET_G.rfind('.pth')]
         model_dir = NET_G
+
         state_dict = \
             torch.load(model_dir, map_location=lambda storage, loc: storage)
         netG.load_state_dict(state_dict)
@@ -204,8 +131,6 @@ def gen_example(data_dic):
                             im = Image.fromarray(img_set)
                             fullpath = '%s_a%d.png' % (save_name, k)
                             im.save(fullpath)
-
-
 
 
 def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
@@ -314,6 +239,29 @@ def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
         return None
 
 
+def drawCaption(convas, captions, ixtoword, vis_size, off1=2, off2=2):
+    num = captions.size(0)
+    img_txt = Image.fromarray(convas)
+    # get a font
+    # fnt = None  # ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
+    print ("CURRENT WORKING DIRCTORY : " , os.getcwd())
+    fnt = ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
+    # get a drawing context
+    d = ImageDraw.Draw(img_txt)
+    sentence_list = []
+    for i in range(num):
+        cap = captions[i].data.cpu().numpy()
+        sentence = []
+        for j in range(len(cap)):
+            if cap[j] == 0:
+                break
+            word = ixtoword[cap[j]].encode('ascii', 'ignore').decode('ascii')
+            d.text(((j + off1) * (vis_size + off2), i * FONT_MAX), '%d:%s' % (j, word[:6]),
+                   font=fnt, fill=(255, 255, 255, 255))
+            sentence.append(word)
+        sentence_list.append(sentence)
+    return img_txt, sentence_list
+
 
 def mkdir_p(path):
     try:
@@ -325,6 +273,25 @@ def mkdir_p(path):
             raise
 
 
+def upBlock(in_planes, out_planes):
+    block = nn.Sequential(
+        nn.Upsample(scale_factor=2, mode='nearest'),
+        conv3x3(in_planes, out_planes * 2),
+        nn.BatchNorm2d(out_planes * 2),
+        GLU())
+    return block
+
+
+def conv1x1(in_planes, out_planes):
+    "1x1 convolution with padding"
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1,
+                    padding=0, bias=False)
+
+
+def conv3x3(in_planes, out_planes):
+    "3x3 convolution with padding"
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=1,
+                     padding=1, bias=False)
 
 
 ###Class of Models###
@@ -437,6 +404,27 @@ class CA_NET(nn.Module):
         self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
         self.relu = GLU()
 
+    def encode(self, text_embedding):
+        x = self.relu(self.fc(text_embedding))
+        mu = x[:, :self.c_dim]
+        logvar = x[:, self.c_dim:]
+        return mu, logvar
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        if CUDA:
+            eps = torch.cuda.FloatTensor(std.size()).normal_()
+        else:
+            eps = torch.FloatTensor(std.size()).normal_()
+        eps = Variable(eps)
+        return eps.mul(std).add_(mu)
+
+    def forward(self, text_embedding):
+        mu, logvar = self.encode(text_embedding)
+        c_code = self.reparametrize(mu, logvar)
+        return c_code, mu, logvar
+
+
 
 class GLU(nn.Module):
     def __init__(self):
@@ -453,7 +441,7 @@ class INIT_STAGE_G(nn.Module):
     def __init__(self, ngf, ncf):
         super(INIT_STAGE_G, self).__init__()
         self.gf_dim = ngf
-        self.in_dim = cfg.GAN.Z_DIM + ncf  # cfg.TEXT.EMBEDDING_DIM
+        self.in_dim = Z_DIM + ncf  # cfg.TEXT.EMBEDDING_DIM
 
         self.define_module()
 
@@ -503,12 +491,6 @@ class GET_IMAGE_G(nn.Module):
     def forward(self, h_code):
         out_img = self.img(h_code)
         return out_img
-
-
-def conv1x1(in_planes, out_planes):
-    "1x1 convolution with padding"
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1,
-                    padding=0, bias=False)
 
 
 class GlobalAttentionGeneral(nn.Module):
@@ -602,6 +584,22 @@ class NEXT_STAGE_G(nn.Module):
         return out_code, att
 
 
+class ResBlock(nn.Module):
+    def __init__(self, channel_num):
+        super(ResBlock, self).__init__()
+        self.block = nn.Sequential(
+            conv3x3(channel_num, channel_num * 2),
+            nn.BatchNorm2d(channel_num * 2),
+            GLU(),
+            conv3x3(channel_num, channel_num),
+            nn.BatchNorm2d(channel_num))
+
+    def forward(self, x):
+        residual = x
+        out = self.block(x)
+        out += residual
+        return out
+
 
 class G_NET(nn.Module):
     def __init__(self):
@@ -634,18 +632,18 @@ class G_NET(nn.Module):
         att_maps = []
         c_code, mu, logvar = self.ca_net(sent_emb)
 
-        if cfg.TREE.BRANCH_NUM > 0:
+        if BRANCH_NUM > 0:
             h_code1 = self.h_net1(z_code, c_code)
             fake_img1 = self.img_net1(h_code1)
             fake_imgs.append(fake_img1)
-        if cfg.TREE.BRANCH_NUM > 1:
+        if BRANCH_NUM > 1:
             h_code2, att1 = \
                 self.h_net2(h_code1, c_code, word_embs, mask)
             fake_img2 = self.img_net2(h_code2)
             fake_imgs.append(fake_img2)
             if att1 is not None:
                 att_maps.append(att1)
-        if cfg.TREE.BRANCH_NUM > 2:
+        if BRANCH_NUM > 2:
             h_code3, att2 = \
                 self.h_net3(h_code2, c_code, word_embs, mask)
             fake_img3 = self.img_net3(h_code3)
@@ -654,6 +652,99 @@ class G_NET(nn.Module):
                 att_maps.append(att2)
 
         return fake_imgs, att_maps, mu, logvar
+
+
+
+
+
+###Generate Examples###
+
+filepath = 'captions.pickle'  # Load captions.pickle contain four parts :
+#captions[0] : train_captions, 88550 caption each of different length of words (9-25),each word represented by unique index
+#captions[1] : test_captions , 29330 caption each of different length of words (9-25),each word represented by unique index
+#captions[2] : index to word dictionary that maps 5450 indexes[key] to words[value]
+#captions[3] : word to index dictionary that maps 5450 words[key] to indexes[value]
+
+with open(filepath, 'rb') as f:
+    x = pickle.load(f)
+    wordtoix = x[3]
+    del x
+    n_words = len(wordtoix)
+    print("number of words : ", n_words)
+
+algo = ''
+filepath = 'example_filenames.txt'
+#a group of example filenames, 24 names for 24 file, each file with a number of captions
+
+data_dic = {}  # dictionary used to generate images from captions
+#key : name of file from which we got captions
+#value: [padded-sorted_based_on_length-indexed captions, original length of each(before padding, indexes to order based on length)
+
+with open(filepath, "r") as f:
+    filenames = f.read().split('\n')
+    for name in filenames:
+        if name == "example_captions":  #Keep this way until you download the rest of the file captions
+            if len(name) == 0:
+                continue
+            filepath = '%s.txt' % (name)
+            with open(filepath, "r") as f:
+                print('Load from:', name)
+                sentences = f.read().split('\n')
+                # split your text file of 16 captions to a list of 16 string entries
+                print("sentences : ", sentences)
+                captions = []
+                cap_lens = []
+                for sent in sentences:
+                    if len(sent) == 0:
+                        continue
+                    sent = sent.replace("\ufffd\ufffd", " ")
+                    tokenizer = RegexpTokenizer(r'\w+')
+                    tokens = tokenizer.tokenize(sent.lower())
+                    #convert a single sentence(string) to list of tokens(words)=>result in a list of string entries that are word that make up the original sentence(caption)
+                    print("tokens : ", tokens)
+                    if len(tokens) == 0:
+                        print('sent', sent)
+                        continue
+
+                    rev = []
+                    for t in tokens:
+                        t = t.encode('ascii', 'ignore').decode('ascii')
+                        if len(t) > 0 and t in wordtoix:
+                            rev.append(wordtoix[t])
+                            #convert the list of words to a list crosspending indexes
+                    captions.append(rev)  # all captions in the file
+                    cap_lens.append(len(rev))
+                    # the length(number of words/tokens) in each caption
+            max_len = np.max(cap_lens)  # used to pad shorter captions
+            print("captions : ", captions)
+            print("number of captions : ", len(captions))
+            print("max_len : ", max_len)
+            print("cap_lens : ", cap_lens)
+
+            sorted_indices = np.argsort(cap_lens)[::-1]
+            # Returns the indices that would sort the array of lengths.
+            print("sorted_indices : ", sorted_indices)
+            cap_lens = np.asarray(cap_lens)
+            cap_lens = cap_lens[sorted_indices]
+            # sort the array of lengths using the sotring indices
+            print("sorted cap_lens : ", cap_lens)
+            cap_array = np.zeros(
+                (len(captions), max_len), dtype='int64'
+            )  #placeholder for the padded sorted array caption
+            for i in range(len(captions)):
+                idx = sorted_indices[i]
+                cap = captions[idx]
+                c_len = len(cap)
+                cap_array[i, :c_len] = cap
+            print("padded sorted array caption : ", cap_array)
+            key = name[(name.rfind('/') + 1):]
+            print("name : ", name)
+            print("key : ", key)
+            data_dic[key] = [cap_array, cap_lens, sorted_indices]
+            print("data_dic", data_dic)
+
+gen_example(data_dic)
+
 
 
 
