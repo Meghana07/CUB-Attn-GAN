@@ -26,6 +26,7 @@ FONT_MAX = 50
 
 ###Imports Part###
 import os
+import shutil 
 import numpy as np
 import pickle
 from nltk.tokenize import RegexpTokenizer
@@ -77,6 +78,7 @@ def gen_example(data_dic):
         mkdir_p(save_dir)
         print ("50. Created directory with name : ", save_dir)
         captions, cap_lens, sorted_indices = data_dic[key]
+        
         print("51. fetched captions, cap_lens, sorted_indices from the dictionary")
 
         batch_size = captions.shape[0]
@@ -118,15 +120,17 @@ def gen_example(data_dic):
                 save_name = '%s/%d_s_%d' % (save_dir, i, sorted_indices[j])
                 print("87.Saving each image generated of the 16 captions with name: (", save_name,")")
                 for k in range(len(fake_imgs)):
+                    print("88. looping through the 3 images from each stage to save (",k+1,"of 3)")
                     im = fake_imgs[k][j].data.cpu().numpy()
                     im = (im + 1.0) * 127.5
                     im = im.astype(np.uint8)
-                    # print('im', im.shape)
+                    print('89.image number :', k+1 ," with shape: ", im.shape, "moved to cpu as numpy array")
                     im = np.transpose(im, (1, 2, 0))
-                    # print('im', im.shape)
+                    print('90. image transposed to change to PIL image with shape : ', im.shape)
                     im = Image.fromarray(im)
                     fullpath = '%s_g%d.png' % (save_name, k)
                     im.save(fullpath)
+                    print("91. image saved to path: ", fullpath)
 
                 for k in range(len(attention_maps)):
                     if len(fake_imgs) > 1:
@@ -312,6 +316,10 @@ def conv3x3(in_planes, out_planes):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=1,
                      padding=1, bias=False)
 
+def describe_tensor (name , tensor):
+    print (name ,": size : " , tensor.size())
+    #print (name ,": first element : " , tensor[0])
+    #print (name ,": non-zeros : ",tensor.view(-1).nonzero().size())
 
 ###Class of Models###
 class RNN_ENCODER(nn.Module):
@@ -377,12 +385,8 @@ class RNN_ENCODER(nn.Module):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).data
         if self.rnn_type == 'LSTM':
-            return (Variable(
-                weight.new(self.nlayers * self.num_directions, bsz,
-                           self.nhidden).zero_()),
-                    Variable(
-                        weight.new(self.nlayers * self.num_directions, bsz,
-                                   self.nhidden).zero_()))
+            return (Variable( weight.new(self.nlayers * self.num_directions, bsz, self.nhidden).zero_()),
+                    Variable( weight.new(self.nlayers * self.num_directions, bsz, self.nhidden).zero_()))
         else:
             return Variable(
                 weight.new(self.nlayers * self.num_directions, bsz,
@@ -392,6 +396,8 @@ class RNN_ENCODER(nn.Module):
         # input: torch.LongTensor of size batch x n_steps
         # --> emb: batch x n_steps x ninput
         emb = self.drop(self.encoder(captions))
+        print("--------------------------------------")
+        describe_tensor("emb" , emb)
         #
         # Returns: a PackedSequence object
         cap_lens = cap_lens.data.tolist()
@@ -405,6 +411,9 @@ class RNN_ENCODER(nn.Module):
         # PackedSequence object
         # --> (batch, seq_len, hidden_size * num_directions)
         output = pad_packed_sequence(output, batch_first=True)[0]
+
+
+        
         # output = self.drop(output)
         # --> batch x hidden_size*num_directions x seq_len
         words_emb = output.transpose(1, 2)
@@ -414,6 +423,7 @@ class RNN_ENCODER(nn.Module):
         else:
             sent_emb = hidden.transpose(0, 1).contiguous()
         sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)
+
         return words_emb, sent_emb
 
 class CA_NET(nn.Module):
@@ -451,6 +461,10 @@ class CA_NET(nn.Module):
         print("64. Calling reparamatrize of CA_NET")
         c_code = self.reparametrize(mu, logvar)
         print("65. finished reparamatrize of CA_NET")
+        describe_tensor("text_embedding",text_embedding)
+        describe_tensor("mu",mu)
+        describe_tensor("logvar",logvar)
+        describe_tensor("c_code",c_code)
         return c_code, mu, logvar
 
 class GLU(nn.Module):
@@ -681,6 +695,10 @@ class G_NET(nn.Module):
             :param mask: batch x seq_len
             :return:
         """
+        describe_tensor("z_code " , z_code)
+        describe_tensor(" sent_emb" ,sent_emb )
+        describe_tensor("word_embs" ,word_embs )
+        describe_tensor("mask " ,mask )
         fake_imgs = []
         att_maps = []
         print ("61. Calling forward of CA_NET (ca_net)")
@@ -737,10 +755,10 @@ filepath = 'captions.pickle'  # Load captions.pickle contain four parts :
 
 with open(filepath, 'rb') as f:
     x = pickle.load(f)
-    wordtoix = x[3]
+    ixtoword, wordtoix = x[2], x[3]
     del x
     n_words = len(wordtoix)
-
+    shutil.rmtree("netG_epoch_600")
     print("1.Opened and Loaded captions.pickle to fetch wordtoix of length : ", n_words)
     filepath = 'example_filenames.txt' #a group of example filenames, 24 names for 24 file, each file with a number of captions
 
@@ -853,3 +871,19 @@ gen_example(data_dic)
 
 # !cp  /content/AttnGAN/DAMSMencoders/bird/text_encoder599.pth /content/ 
 # !cp /content/AttnGAN/DAMSMencoders/bird/image_encoder599.pth /content/
+
+
+# ####
+# number = 1
+
+#captions_n = captions.numpy()
+#for caption in captions_n :
+#     decoded_caption_s = ''
+#     for code in caption :
+#         if code != 0:
+#             decoded_caption_s = decoded_caption_s + ixtoword[code] + " "
+#         else:
+#             break
+#     print (number ,". DeCoded caption : ", decoded_caption_s)
+#     number +=1
+# ##########
