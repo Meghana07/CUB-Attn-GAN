@@ -45,96 +45,110 @@ from PIL import Image, ImageDraw, ImageFont
 ###utils functions###
 
 def gen_example(data_dic):
-    if NET_G == '':
-        print('Error: the path for models is not found!')
+    # Build and load the generator
+    print ("10. creating an object of RNN_ENCODER")
+    text_encoder = RNN_ENCODER(n_words, nhidden=EMBEDDING_DIM)
+    print("15. text_encoder object of RNN_ENCODER created")
+    state_dict = torch.load(NET_E, map_location=lambda storage, loc: storage)
+    text_encoder.load_state_dict(state_dict)
+    print("16. Loaded weights for text_encoder from:", NET_E)
+    #cudaaa text_encoder = text_encoder.cuda()
+    text_encoder.eval()
+    print("17. text_encoder moved to gpu and in evaluation mode")
+
+    # the path to save generated images
+    if B_DCGAN:
+        netG = G_DCGAN()
     else:
-        # Build and load the generator
-        text_encoder = RNN_ENCODER(n_words, nhidden=EMBEDDING_DIM)
-        state_dict = torch.load(NET_E,
-                                map_location=lambda storage, loc: storage)
-        text_encoder.load_state_dict(state_dict)
-        print('Load text encoder from:', NET_E)
-        text_encoder = text_encoder.cuda()
-        text_encoder.eval()
+        print("18. creating an object of G_NET (Generator)")
+        netG = G_NET()
+        print("47. object of G_NET (netG) 'Three stage Generator created'")
+    s_tmp = NET_G[:NET_G.rfind('.pth')]
+    model_dir = NET_G
 
-        # the path to save generated images
-        if B_DCGAN:
-            netG = G_DCGAN()
-        else:
-            netG = G_NET()
-        s_tmp = NET_G[:NET_G.rfind('.pth')]
-        model_dir = NET_G
+    state_dict = torch.load(model_dir, map_location=lambda storage, loc: storage)
+    netG.load_state_dict(state_dict)
+    print("48. Loaded weights for netG from:", model_dir)
+    #cudaaa netG.cuda()
+    netG.eval()
+    print("49. text_encoder moved to gpu and in evaluation mode")
+    for key in data_dic:
+        save_dir = '%s/%s' % (s_tmp, key)
+        mkdir_p(save_dir)
+        print ("50. Created directory with name : ", save_dir)
+        captions, cap_lens, sorted_indices = data_dic[key]
+        print("51. fetched captions, cap_lens, sorted_indices from the dictionary")
 
-        state_dict = \
-            torch.load(model_dir, map_location=lambda storage, loc: storage)
-        netG.load_state_dict(state_dict)
-        print('Load G from: ', model_dir)
-        netG.cuda()
-        netG.eval()
-        for key in data_dic:
-            save_dir = '%s/%s' % (s_tmp, key)
-            mkdir_p(save_dir)
-            captions, cap_lens, sorted_indices = data_dic[key]
+        batch_size = captions.shape[0]
+        print("52. got batch size from caption array (number of sentences in file) as :" ,batch_size)
+        nz = Z_DIM
+        captions = Variable(torch.from_numpy(captions), volatile=True)
+        cap_lens = Variable(torch.from_numpy(cap_lens), volatile=True)
 
-            batch_size = captions.shape[0]
-            nz = Z_DIM
-            captions = Variable(torch.from_numpy(captions), volatile=True)
-            cap_lens = Variable(torch.from_numpy(cap_lens), volatile=True)
+        #cudaaa captions = captions.cuda()
+        #cudaaa cap_lens = cap_lens.cuda()
+        print("53. Loaded captions to pytorch and moved to cuda")
+        for i in range(1):  # 16
+            noise = Variable(torch.FloatTensor(batch_size, nz), volatile=True)
+            #cudaaa noise = noise.cuda()
+            print("54. Loaded noise to pytorch and moved to cuda")
+            #######################################################
+            # (1) Extract text embeddings
+            ######################################################
+            print("55. Calling init_hidden of RNN_ENCODER (text_encoder)")
+            hidden = text_encoder.init_hidden(batch_size)
+            print("56. finished init_hidden of RNN_ENCODER (text_encoder)")
+            # words_embs: batch_size x nef x seq_len
+            # sent_emb: batch_size x nef
+            print("57. Calling forward of RNN_ENCODER (text_encoder)")
+            words_embs, sent_emb = text_encoder(captions, cap_lens, hidden)
+            print("58. finished forward of RNN_ENCODER (text_encoder)")
+            mask = (captions == 0)
+            print("59. something to make mask of captions")
+            #######################################################
+            # (2) Generate fake images
+            ######################################################
+            noise.data.normal_(0, 1)
+            print ("60. Calling forward of G_NET (netG)")
+            fake_imgs, attention_maps, _, _ = netG(noise, sent_emb, words_embs, mask)
+            print ("86. finished forward of G_NET (netG)")
+            # G attention
+            cap_lens_np = cap_lens.cpu().data.numpy()
+            for j in range(batch_size):
+                save_name = '%s/%d_s_%d' % (save_dir, i, sorted_indices[j])
+                print("87.Saving each image generated of the 16 captions with name: (", save_name,")")
+                for k in range(len(fake_imgs)):
+                    im = fake_imgs[k][j].data.cpu().numpy()
+                    im = (im + 1.0) * 127.5
+                    im = im.astype(np.uint8)
+                    # print('im', im.shape)
+                    im = np.transpose(im, (1, 2, 0))
+                    # print('im', im.shape)
+                    im = Image.fromarray(im)
+                    fullpath = '%s_g%d.png' % (save_name, k)
+                    im.save(fullpath)
 
-            captions = captions.cuda()
-            cap_lens = cap_lens.cuda()
-            for i in range(1):  # 16
-                noise = Variable(torch.FloatTensor(batch_size, nz), volatile=True)
-                noise = noise.cuda()
-                #######################################################
-                # (1) Extract text embeddings
-                ######################################################
-                hidden = text_encoder.init_hidden(batch_size)
-                # words_embs: batch_size x nef x seq_len
-                # sent_emb: batch_size x nef
-                words_embs, sent_emb = text_encoder(captions, cap_lens, hidden)
-                mask = (captions == 0)
-                #######################################################
-                # (2) Generate fake images
-                ######################################################
-                noise.data.normal_(0, 1)
-                fake_imgs, attention_maps, _, _ = netG(noise, sent_emb,
-                                                        words_embs, mask)
-                # G attention
-                cap_lens_np = cap_lens.cpu().data.numpy()
-                for j in range(batch_size):
-                    save_name = '%s/%d_s_%d' % (save_dir, i, sorted_indices[j])
-                    for k in range(len(fake_imgs)):
-                        im = fake_imgs[k][j].data.cpu().numpy()
-                        im = (im + 1.0) * 127.5
-                        im = im.astype(np.uint8)
-                        # print('im', im.shape)
-                        im = np.transpose(im, (1, 2, 0))
-                        # print('im', im.shape)
-                        im = Image.fromarray(im)
-                        fullpath = '%s_g%d.png' % (save_name, k)
+                for k in range(len(attention_maps)):
+                    if len(fake_imgs) > 1:
+                        im = fake_imgs[k + 1].detach().cpu()
+                    else:
+                        im = fake_imgs[0].detach().cpu()
+                    attn_maps = attention_maps[k]
+                    att_sze = attn_maps.size(2)
+                    img_set, sentences = \
+                        build_super_images2(im[j].unsqueeze(0),
+                                            captions[j].unsqueeze(0),
+                                            [cap_lens_np[j]], wordtoix,
+                                            [attn_maps[j]], att_sze)
+                    if img_set is not None:
+                        im = Image.fromarray(img_set)
+                        fullpath = '%s_a%d.png' % (save_name, k)
                         im.save(fullpath)
-
-                    for k in range(len(attention_maps)):
-                        if len(fake_imgs) > 1:
-                            im = fake_imgs[k + 1].detach().cpu()
-                        else:
-                            im = fake_imgs[0].detach().cpu()
-                        attn_maps = attention_maps[k]
-                        att_sze = attn_maps.size(2)
-                        img_set, sentences = \
-                            build_super_images2(im[j].unsqueeze(0),
-                                                captions[j].unsqueeze(0),
-                                                [cap_lens_np[j]], wordtoix,
-                                                [attn_maps[j]], att_sze)
-                        if img_set is not None:
-                            im = Image.fromarray(img_set)
-                            fullpath = '%s_a%d.png' % (save_name, k)
-                            im.save(fullpath)
 
 
 def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
                         attn_maps, att_sze, vis_size=256, topK=5):
+    print("using build_super_images2 ")
     batch_size = real_imgs.size(0)
     max_word_num = np.max(cap_lens)
     text_convas = np.ones([batch_size * FONT_MAX,
@@ -240,6 +254,7 @@ def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
 
 
 def drawCaption(convas, captions, ixtoword, vis_size, off1=2, off2=2):
+    print("using drawCaption")
     num = captions.size(0)
     img_txt = Image.fromarray(convas)
     # get a font
@@ -264,6 +279,7 @@ def drawCaption(convas, captions, ixtoword, vis_size, off1=2, off2=2):
 
 
 def mkdir_p(path):
+    print("using mkdir_p")
     try:
         os.makedirs(path)
     except OSError as exc:  # Python >2.5
@@ -274,6 +290,7 @@ def mkdir_p(path):
 
 
 def upBlock(in_planes, out_planes):
+    print("using upBlock")
     block = nn.Sequential(
         nn.Upsample(scale_factor=2, mode='nearest'),
         conv3x3(in_planes, out_planes * 2),
@@ -284,12 +301,14 @@ def upBlock(in_planes, out_planes):
 
 def conv1x1(in_planes, out_planes):
     "1x1 convolution with padding"
+    print("using conv1x1")
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1,
                     padding=0, bias=False)
 
 
 def conv3x3(in_planes, out_planes):
     "3x3 convolution with padding"
+    print("using conv3x3")
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=1,
                      padding=1, bias=False)
 
@@ -318,7 +337,9 @@ class RNN_ENCODER(nn.Module):
         # number of features in the hidden state
         self.nhidden = nhidden // self.num_directions
 
+        print ("11. calling define_module of RNN_ENCODER")
         self.define_module()
+        print ("13. calling init_weights of RNN_ENCODER")
         self.init_weights()
 
     def define_module(self):
@@ -333,6 +354,7 @@ class RNN_ENCODER(nn.Module):
                                 batch_first=True,
                                 dropout=self.drop_prob,
                                 bidirectional=self.bidirectional)
+            print ("12.finshed define_module of RNN_ENCODER")
         elif self.rnn_type == 'GRU':
             self.rnn = nn.GRU(self.ninput,
                                 self.nhidden,
@@ -350,6 +372,7 @@ class RNN_ENCODER(nn.Module):
         # http://pytorch.org/docs/master/_modules/torch/nn/modules/rnn.html#LSTM
         # self.decoder.weight.data.uniform_(-initrange, initrange)
         # self.decoder.bias.data.fill_(0)
+        print ("14. finished init_weights of RNN_ENCODER")
 
     def init_hidden(self, bsz):
         weight = next(self.parameters()).data
@@ -393,7 +416,6 @@ class RNN_ENCODER(nn.Module):
         sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)
         return words_emb, sent_emb
 
-
 class CA_NET(nn.Module):
     # some code is modified from vae examples
     # (https://github.com/pytorch/examples/blob/master/vae/main.py)
@@ -402,7 +424,9 @@ class CA_NET(nn.Module):
         self.t_dim = EMBEDDING_DIM
         self.c_dim = CONDITION_DIM
         self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
+        print("20. Creating an object of GLU")
         self.relu = GLU()
+        print("21. object of GLU (relu) created")
 
     def encode(self, text_embedding):
         x = self.relu(self.fc(text_embedding))
@@ -413,22 +437,26 @@ class CA_NET(nn.Module):
     def reparametrize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
         if CUDA:
-            eps = torch.cuda.FloatTensor(std.size()).normal_()
+            #cudaaa eps = torch.cuda.FloatTensor(std.size()).normal_()
+            eps = torch.FloatTensor(std.size()).normal_()
         else:
             eps = torch.FloatTensor(std.size()).normal_()
         eps = Variable(eps)
         return eps.mul(std).add_(mu)
 
     def forward(self, text_embedding):
+        print("62. Calling encode of CA_NET")
         mu, logvar = self.encode(text_embedding)
+        print("63. finished encode of CA_NET")
+        print("64. Calling reparamatrize of CA_NET")
         c_code = self.reparametrize(mu, logvar)
+        print("65. finished reparamatrize of CA_NET")
         return c_code, mu, logvar
-
-
 
 class GLU(nn.Module):
     def __init__(self):
         super(GLU, self).__init__()
+        print("Using GLU")
 
     def forward(self, x):
         nc = x.size(1)
@@ -436,13 +464,12 @@ class GLU(nn.Module):
         nc = int(nc / 2)
         return x[:, :nc] * F.sigmoid(x[:, nc:])
 
-
 class INIT_STAGE_G(nn.Module):
     def __init__(self, ngf, ncf):
         super(INIT_STAGE_G, self).__init__()
         self.gf_dim = ngf
         self.in_dim = Z_DIM + ncf  # cfg.TEXT.EMBEDDING_DIM
-
+        print("24. calling define module of INIT_STAGE_G ")
         self.define_module()
 
     def define_module(self):
@@ -451,11 +478,13 @@ class INIT_STAGE_G(nn.Module):
             nn.Linear(nz, ngf * 4 * 4 * 2, bias=False),
             nn.BatchNorm1d(ngf * 4 * 4 * 2),
             GLU())
-
+        print("25.Creating 4 upBlock Layers (upBlock: Sequential of: nn.Upsample, conv3x3, nn.BatchNorm2d, GLU)")
         self.upsample1 = upBlock(ngf, ngf // 2)
         self.upsample2 = upBlock(ngf // 2, ngf // 4)
         self.upsample3 = upBlock(ngf // 4, ngf // 8)
         self.upsample4 = upBlock(ngf // 8, ngf // 16)
+        print("26.upsample1, upsample2, upsample3 and upsample4 careted ")
+        print("27. finished define module of INIT_STAGE_G")
 
     def forward(self, z_code, c_code):
         """
@@ -478,7 +507,6 @@ class INIT_STAGE_G(nn.Module):
 
         return out_code64
 
-
 class GET_IMAGE_G(nn.Module):
     def __init__(self, ngf):
         super(GET_IMAGE_G, self).__init__()
@@ -492,10 +520,10 @@ class GET_IMAGE_G(nn.Module):
         out_img = self.img(h_code)
         return out_img
 
-
 class GlobalAttentionGeneral(nn.Module):
     def __init__(self, idf, cdf):
         super(GlobalAttentionGeneral, self).__init__()
+        print("34. make conv_context of conv1x1")
         self.conv_context = conv1x1(cdf, idf)
         self.sm = nn.Softmax()
         self.mask = None
@@ -544,7 +572,6 @@ class GlobalAttentionGeneral(nn.Module):
 
         return weightedContext, attn
 
-
 class NEXT_STAGE_G(nn.Module):
     def __init__(self, ngf, nef, ncf):
         super(NEXT_STAGE_G, self).__init__()
@@ -552,7 +579,9 @@ class NEXT_STAGE_G(nn.Module):
         self.ef_dim = nef
         self.cf_dim = ncf
         self.num_residual = R_NUM
+        print("32. calling define_module of NEXT_STAGE_G ")
         self.define_module()
+        print("39. finished define_module of NEXT_STAGE_G")
 
     def _make_layer(self, block, channel_num):
         layers = []
@@ -562,8 +591,13 @@ class NEXT_STAGE_G(nn.Module):
 
     def define_module(self):
         ngf = self.gf_dim
+        print("33.Creating an object of GlobalAttentionGeneral")
         self.att = GlobalAttentionGeneral(ngf, self.ef_dim)
+        print("35. object of GlobalAttentionGeneral (att) created")
+        print("36. calling _make_layer of NEXT_STAGE_G (R_NUM=2 of resBlocks) ")
         self.residual = self._make_layer(ResBlock, ngf * 2)
+        print("37. finished _make_layer of NEXT_STAGE_G")
+        print("38. Creating 1 upBlock Layer")
         self.upsample = upBlock(ngf * 2, ngf)
 
     def forward(self, h_code, c_code, word_embs, mask):
@@ -573,8 +607,12 @@ class NEXT_STAGE_G(nn.Module):
             c_code1: batch x idf x queryL
             att1: batch x sourceL x queryL
         """
+        print ("73. Calling applyMask of GlobalAttentionGeneral(att)")
         self.att.applyMask(mask)
+        print ("74. finished applyMask of GlobalAttentionGeneral(att)")
+        print ("75. Calling forward of GlobalAttentionGeneral(att)")
         c_code, att = self.att(h_code, word_embs)
+        print ("76. finished forward of GlobalAttentionGeneral(att)")
         h_c_code = torch.cat((h_code, c_code), 1)
         out_code = self.residual(h_c_code)
 
@@ -583,10 +621,10 @@ class NEXT_STAGE_G(nn.Module):
 
         return out_code, att
 
-
 class ResBlock(nn.Module):
     def __init__(self, channel_num):
         super(ResBlock, self).__init__()
+        print("using ResBlock(Sequential : conv3x3, nn.BatchNorm2d, GLU, conv3x3, nn.BatchNorm2d)")
         self.block = nn.Sequential(
             conv3x3(channel_num, channel_num * 2),
             nn.BatchNorm2d(channel_num * 2),
@@ -600,25 +638,40 @@ class ResBlock(nn.Module):
         out += residual
         return out
 
-
 class G_NET(nn.Module):
     def __init__(self):
         super(G_NET, self).__init__()
         ngf = GF_DIM
         nef = EMBEDDING_DIM
         ncf = CONDITION_DIM
+        print("19.Creating an object CA_NET")
         self.ca_net = CA_NET()
+        print("22.object of CA_NET (ca_net) created")
 
         if BRANCH_NUM > 0:
+            print("23.Creating an object INIT_STAGE_G (first Generator)")
             self.h_net1 = INIT_STAGE_G(ngf * 16, ncf)
+            print("28. object of INIT_STAGE_G (h_net1) created")
+            print("29. Creating an object of GET_IMAGE_G")
             self.img_net1 = GET_IMAGE_G(ngf)
+            print("30. object of GET_IMAGE_G (img_net1) created")
         # gf x 64 x 64
         if BRANCH_NUM > 1:
+            print("31.Creating an object NEXT_STAGE_G (second Generator)")
             self.h_net2 = NEXT_STAGE_G(ngf, nef, ncf)
+            print("40.object of NEXT_STAGE_G(h_net2) created")
+            print("41. Creating an object of GET_IMAGE_G")
             self.img_net2 = GET_IMAGE_G(ngf)
+            print("42. object of GET_IMAGE_G (img_net2) created")
         if BRANCH_NUM > 2:
+            print("43.Creating an object NEXT_STAGE_G (third Generator)")
+            print("--------------BeginDuplicate--------------")
             self.h_net3 = NEXT_STAGE_G(ngf, nef, ncf)
+            print("---------------EndDuplicate---------------")
+            print("44.object of NEXT_STAGE_G(h_net3) created")
+            print("45. Creating an object of GET_IMAGE_G")
             self.img_net3 = GET_IMAGE_G(ngf)
+            print("46. object of GET_IMAGE_G (img_net3) created")
 
     def forward(self, z_code, sent_emb, word_embs, mask):
         """
@@ -630,24 +683,41 @@ class G_NET(nn.Module):
         """
         fake_imgs = []
         att_maps = []
+        print ("61. Calling forward of CA_NET (ca_net)")
         c_code, mu, logvar = self.ca_net(sent_emb)
+        print ("66. finished forward of CA_NET (ca_net)")
 
         if BRANCH_NUM > 0:
+            print ("67. Calling forward of INIT_STAGE_G (h_net1)")
             h_code1 = self.h_net1(z_code, c_code)
+            print ("68. finished forward of INIT_STAGE_G (h_net1)")
+            print ("69. Calling forward of GET_IMAGE_G (img_net1)")
             fake_img1 = self.img_net1(h_code1)
+            print ("70. finished forward of GET_IMAGE_G (img_net1)")
             fake_imgs.append(fake_img1)
+            print ("71. appended first stage images (fake_imgs1) to the full list (fake_imgs) ")
         if BRANCH_NUM > 1:
-            h_code2, att1 = \
-                self.h_net2(h_code1, c_code, word_embs, mask)
+            print ("72. Calling forward of NEXT_STAGE_G (h_net2)")
+            h_code2, att1 = self.h_net2(h_code1, c_code, word_embs, mask)
+            print ("77. finshed forward of NEXT_STAGE_G (h_net2)")
+            print ("78. Calling forward of GET_IMAGE_G (img_net2)")
             fake_img2 = self.img_net2(h_code2)
+            print ("79. finished forward of GET_IMAGE_G (img_net2)")
             fake_imgs.append(fake_img2)
+            print ("80. appended second stage images (fake_imgs2) to the full list (fake_imgs) ")
             if att1 is not None:
                 att_maps.append(att1)
         if BRANCH_NUM > 2:
-            h_code3, att2 = \
-                self.h_net3(h_code2, c_code, word_embs, mask)
+            print ("81. Calling forward of NEXT_STAGE_G (h_net3)")
+            print("--------------BeginDuplicate--------------")
+            h_code3, att2 = self.h_net3(h_code2, c_code, word_embs, mask)
+            print("---------------EndDuplicate---------------")
+            print ("82. finshed forward of NEXT_STAGE_G (h_net3)")
+            print ("83. Calling forward of GET_IMAGE_G (img_net3)")
             fake_img3 = self.img_net3(h_code3)
+            print ("84. Calling forward of GET_IMAGE_G (img_net3)")
             fake_imgs.append(fake_img3)
+            print ("85. appended third stage images (fake_imgs3) to the full list (fake_imgs) ")
             if att2 is not None:
                 att_maps.append(att2)
 
@@ -658,7 +728,7 @@ class G_NET(nn.Module):
 
 
 ###Generate Examples###
-
+print("0.This where Execution Start")
 filepath = 'captions.pickle'  # Load captions.pickle contain four parts :
 #captions[0] : train_captions, 88550 caption each of different length of words (9-25),each word represented by unique index
 #captions[1] : test_captions , 29330 caption each of different length of words (9-25),each word represented by unique index
@@ -670,79 +740,65 @@ with open(filepath, 'rb') as f:
     wordtoix = x[3]
     del x
     n_words = len(wordtoix)
-    print("number of words : ", n_words)
 
-algo = ''
-filepath = 'example_filenames.txt'
-#a group of example filenames, 24 names for 24 file, each file with a number of captions
+    print("1.Opened and Loaded captions.pickle to fetch wordtoix of length : ", n_words)
+    filepath = 'example_filenames.txt' #a group of example filenames, 24 names for 24 file, each file with a number of captions
 
-data_dic = {}  # dictionary used to generate images from captions
-#key : name of file from which we got captions
-#value: [padded-sorted_based_on_length-indexed captions, original length of each(before padding, indexes to order based on length)
+    data_dic = {}  # dictionary used to generate images from captions
+    #key : name of file from which we got captions
+    #value: [padded-sorted_based_on_length-indexed captions, original length of each(before padding, indexes to order based on length)
 
 with open(filepath, "r") as f:
     filenames = f.read().split('\n')
+    print("2.Opened and loaded example_filename.txt")
+    first_counter = 0
     for name in filenames:
+        first_counter += 1
         if name == "example_captions":  #Keep this way until you download the rest of the file captions
-            if len(name) == 0:
-                continue
             filepath = '%s.txt' % (name)
             with open(filepath, "r") as f:
-                print('Load from:', name)
                 sentences = f.read().split('\n')
+                print("3.Opened and loaded example_captions.txt(",first_counter,") in loop of all names of filename")
                 # split your text file of 16 captions to a list of 16 string entries
-                print("sentences : ", sentences)
                 captions = []
                 cap_lens = []
+                second_counter = 0
                 for sent in sentences:
-                    if len(sent) == 0:
-                        continue
+                    second_counter += 1
                     sent = sent.replace("\ufffd\ufffd", " ")
                     tokenizer = RegexpTokenizer(r'\w+')
                     tokens = tokenizer.tokenize(sent.lower())
                     #convert a single sentence(string) to list of tokens(words)=>result in a list of string entries that are word that make up the original sentence(caption)
-                    print("tokens : ", tokens)
-                    if len(tokens) == 0:
-                        print('sent', sent)
-                        continue
-
+                    print("4.Tokenized a sentence from example file in filenames (", second_counter,")" )
                     rev = []
+                    third_counter = 0
                     for t in tokens:
+                        third_counter += 1
                         t = t.encode('ascii', 'ignore').decode('ascii')
-                        if len(t) > 0 and t in wordtoix:
-                            rev.append(wordtoix[t])
+                        rev.append(wordtoix[t])
+                        print ("5.append converted token to new list(",third_counter,")")
                             #convert the list of words to a list crosspending indexes
                     captions.append(rev)  # all captions in the file
                     cap_lens.append(len(rev))
+                    print("6.append converted sentence to list of captions (",second_counter,")")
                     # the length(number of words/tokens) in each caption
             max_len = np.max(cap_lens)  # used to pad shorter captions
-            print("captions : ", captions)
-            print("number of captions : ", len(captions))
-            print("max_len : ", max_len)
-            print("cap_lens : ", cap_lens)
-
-            sorted_indices = np.argsort(cap_lens)[::-1]
-            # Returns the indices that would sort the array of lengths.
-            print("sorted_indices : ", sorted_indices)
+            sorted_indices = np.argsort(cap_lens)[::-1] # Returns the indices that would sort the array of lengths.
             cap_lens = np.asarray(cap_lens)
-            cap_lens = cap_lens[sorted_indices]
-            # sort the array of lengths using the sotring indices
-            print("sorted cap_lens : ", cap_lens)
-            cap_array = np.zeros(
-                (len(captions), max_len), dtype='int64'
-            )  #placeholder for the padded sorted array caption
+            cap_lens = cap_lens[sorted_indices]# sort the array of lengths using the sotring indices
+            cap_array = np.zeros((len(captions), max_len), dtype='int64')  #placeholder for the padded sorted array caption
             for i in range(len(captions)):
                 idx = sorted_indices[i]
                 cap = captions[idx]
                 c_len = len(cap)
                 cap_array[i, :c_len] = cap
-            print("padded sorted array caption : ", cap_array)
+            print("7.created padded sorted array of caption cap_array (", first_counter,")")
             key = name[(name.rfind('/') + 1):]
-            print("name : ", name)
-            print("key : ", key)
             data_dic[key] = [cap_array, cap_lens, sorted_indices]
-            print("data_dic", data_dic)
+            print("8. created data_dic of cap_array , cap_lens & sorted_indices (", first_counter,")")
 
+
+print("9. Calling gen_example(data_dic) ")
 gen_example(data_dic)
 
 
