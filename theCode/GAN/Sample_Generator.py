@@ -38,6 +38,9 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
 from PIL import Image, ImageDraw, ImageFont
+import skimage.transform
+
+
 ############
 
 
@@ -120,7 +123,7 @@ def gen_example(data_dic):
                 save_name = '%s/%d_s_%d' % (save_dir, i, sorted_indices[j])
                 print("87.Saving each image generated of the 16 captions with name: (", save_name,")")
                 for k in range(len(fake_imgs)):
-                    print("88. looping through the 3 images from each stage to save (",k+1,"of 3)")
+                    print("88. looping through the 3 images from each stage to save (",k+1,"of ",len(fake_imgs),")")
                     im = fake_imgs[k][j].data.cpu().numpy()
                     im = (im + 1.0) * 127.5
                     im = im.astype(np.uint8)
@@ -133,17 +136,19 @@ def gen_example(data_dic):
                     print("91. image saved to path: ", fullpath)
 
                 for k in range(len(attention_maps)):
+                    print("92. looping through the 2 attention maps from each stage to save (",k+1,"of ",len(attention_maps),")")
                     if len(fake_imgs) > 1:
                         im = fake_imgs[k + 1].detach().cpu()
                     else:
                         im = fake_imgs[0].detach().cpu()
                     attn_maps = attention_maps[k]
                     att_sze = attn_maps.size(2)
-                    img_set, sentences = \
-                        build_super_images2(im[j].unsqueeze(0),
+                    print ("93. Calling build_super_images2 ")
+                    img_set, sentences = build_super_images2(im[j].unsqueeze(0),
                                             captions[j].unsqueeze(0),
-                                            [cap_lens_np[j]], wordtoix,
+                                            [cap_lens_np[j]], ixtoword,
                                             [attn_maps[j]], att_sze)
+                    print ("94. finished build_super_images2")
                     if img_set is not None:
                         im = Image.fromarray(img_set)
                         fullpath = '%s_a%d.png' % (save_name, k)
@@ -153,29 +158,40 @@ def gen_example(data_dic):
 def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
                         attn_maps, att_sze, vis_size=256, topK=5):
     print("using build_super_images2 ")
+    describe_tensor("real_imgs", real_imgs)
+    describe_tensor("captions", captions)
+    print("cap_lens : ", cap_lens)
+    print("ixtoword: ", len(ixtoword))
+    print("attn_maps" , len(attn_maps))
+    print("att_sze: ", att_sze)
     batch_size = real_imgs.size(0)
     max_word_num = np.max(cap_lens)
     text_convas = np.ones([batch_size * FONT_MAX,
-                           max_word_num * (vis_size + 2), 3],
-                           dtype=np.uint8)
+                            max_word_num * (vis_size + 2), 3],
+                            dtype=np.uint8)
+    print ("text_convas" , text_convas.shape)
 
-    real_imgs = \
-        nn.Upsample(size=(vis_size, vis_size), mode='bilinear')(real_imgs)
+    real_imgs = nn.Upsample(size=(vis_size, vis_size), mode='bilinear')(real_imgs)
+    describe_tensor("real_imgs", real_imgs)
     # [-1, 1] --> [0, 1]
     real_imgs.add_(1).div_(2).mul_(255)
     real_imgs = real_imgs.data.numpy()
+    print("real_imgs", real_imgs.shape)
     # b x c x h x w --> b x h x w x c
     real_imgs = np.transpose(real_imgs, (0, 2, 3, 1))
+    print("real_imgs", real_imgs.shape)
     pad_sze = real_imgs.shape
     middle_pad = np.zeros([pad_sze[2], 2, 3])
+    print("middle_pad", middle_pad.shape)
 
     # batch x seq_len x 17 x 17 --> batch x 1 x 17 x 17
     img_set = []
-    num = len(attn_maps)
-
+    num = len(attn_maps) # =1
+    
     text_map, sentences = \
         drawCaption(text_convas, captions, ixtoword, vis_size, off1=0)
     text_map = np.asarray(text_map).astype(np.uint8)
+    print("text_map: ", text_map)
 
     bUpdate = 1
     for i in range(num):
@@ -185,10 +201,12 @@ def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
         attn = attn.repeat(1, 3, 1, 1).data.numpy()
         # n x c x h x w --> n x h x w x c
         attn = np.transpose(attn, (0, 2, 3, 1))
+        print("attn: ", attn)
         num_attn = cap_lens[i]
         thresh = 2./float(num_attn)
         #
         img = real_imgs[i]
+        print("img: ", img)
         row = []
         row_merge = []
         row_txt = []
@@ -244,7 +262,7 @@ def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
         txt = np.concatenate(txt_new[:topK], 1)
         if txt.shape[1] != row.shape[1]:
             print('Warnings: txt', txt.shape, 'row', row.shape,
-                  'row_merge_new', row_merge_new.shape)
+                    'row_merge_new', row_merge_new.shape)
             bUpdate = 0
             break
         row = np.concatenate([txt, row_merge], 0)
@@ -260,25 +278,33 @@ def build_super_images2(real_imgs, captions, cap_lens, ixtoword,
 def drawCaption(convas, captions, ixtoword, vis_size, off1=2, off2=2):
     print("using drawCaption")
     num = captions.size(0)
+    print("num: ", num)
     img_txt = Image.fromarray(convas)
+    print("img_txt :", img_txt.size)
+
     # get a font
     # fnt = None  # ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
     print ("CURRENT WORKING DIRCTORY : " , os.getcwd())
     fnt = ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
+    print("font: ", fnt)
     # get a drawing context
     d = ImageDraw.Draw(img_txt)
+    print("d: ",d)
     sentence_list = []
     for i in range(num):
         cap = captions[i].data.cpu().numpy()
+        print("cap: ", cap)
         sentence = []
         for j in range(len(cap)):
             if cap[j] == 0:
                 break
             word = ixtoword[cap[j]].encode('ascii', 'ignore').decode('ascii')
+            print("word: ", word)
             d.text(((j + off1) * (vis_size + off2), i * FONT_MAX), '%d:%s' % (j, word[:6]),
                    font=fnt, fill=(255, 255, 255, 255))
             sentence.append(word)
         sentence_list.append(sentence)
+        print("sentence_list: ",sentence_list)
     return img_txt, sentence_list
 
 
@@ -423,6 +449,8 @@ class RNN_ENCODER(nn.Module):
         else:
             sent_emb = hidden.transpose(0, 1).contiguous()
         sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)
+        describe_tensor("sent_emb" ,sent_emb )
+        describe_tensor("words_emb" ,words_emb )
 
         return words_emb, sent_emb
 
@@ -473,6 +501,7 @@ class GLU(nn.Module):
         print("Using GLU")
 
     def forward(self, x):
+        describe_tensor("name_glu",x)
         nc = x.size(1)
         assert nc % 2 == 0, 'channels dont divide 2!'
         nc = int(nc / 2)
@@ -481,7 +510,7 @@ class GLU(nn.Module):
 class INIT_STAGE_G(nn.Module):
     def __init__(self, ngf, ncf):
         super(INIT_STAGE_G, self).__init__()
-        self.gf_dim = ngf
+        self.gf_dim = ngf # (GF_DIM=32) * 16
         self.in_dim = Z_DIM + ncf  # cfg.TEXT.EMBEDDING_DIM
         print("24. calling define module of INIT_STAGE_G ")
         self.define_module()
@@ -506,18 +535,32 @@ class INIT_STAGE_G(nn.Module):
         :param c_code: batch x cfg.TEXT.EMBEDDING_DIM
         :return: batch x ngf/16 x 64 x 64
         """
+        describe_tensor("c_code", c_code)
+        describe_tensor("z_code", z_code)
         c_z_code = torch.cat((c_code, z_code), 1)
+        describe_tensor("c_z_code" , c_z_code)
         # state size ngf x 4 x 4
+        print (self.fc)
         out_code = self.fc(c_z_code)
+        describe_tensor("out_code", out_code)
         out_code = out_code.view(-1, self.gf_dim, 4, 4)
+        describe_tensor("out_code", out_code)
         # state size ngf/3 x 8 x 8
+        print(self.upsample1)
         out_code = self.upsample1(out_code)
+        describe_tensor("out_code", out_code)
         # state size ngf/4 x 16 x 16
+        print(self.upsample2)
         out_code = self.upsample2(out_code)
+        describe_tensor("out_code", out_code)
         # state size ngf/8 x 32 x 32
+        print(self.upsample3)
         out_code32 = self.upsample3(out_code)
+        describe_tensor("out_code32", out_code32)
         # state size ngf/16 x 64 x 64
+        print(self.upsample4)
         out_code64 = self.upsample4(out_code32)
+        describe_tensor("out_code64", out_code64)
 
         return out_code64
 
@@ -532,6 +575,9 @@ class GET_IMAGE_G(nn.Module):
 
     def forward(self, h_code):
         out_img = self.img(h_code)
+        describe_tensor("h_code",h_code )
+        print (self.img)
+        describe_tensor("out_img",out_img )
         return out_img
 
 class GlobalAttentionGeneral(nn.Module):
@@ -551,38 +597,56 @@ class GlobalAttentionGeneral(nn.Module):
             context: batch x cdf x sourceL
         """
         ih, iw = input.size(2), input.size(3)
-        queryL = ih * iw
-        batch_size, sourceL = context.size(0), context.size(2)
+        queryL = ih * iw # query length = image hight * image width
+        batch_size, sourceL = context.size(0), context.size(2) # source length = number of words in sentence (22)
+        print("queryL :" , queryL)
+        print("sourceL :" , sourceL)
 
         # --> batch x queryL x idf
         target = input.view(batch_size, -1, queryL)
         targetT = torch.transpose(target, 1, 2).contiguous()
+        describe_tensor("targetT", targetT )
         # batch x cdf x sourceL --> batch x cdf x sourceL x 1
         sourceT = context.unsqueeze(3)
+        describe_tensor("sourceT", sourceT)
         # --> batch x idf x sourceL
+        print (self.conv_context)
         sourceT = self.conv_context(sourceT).squeeze(3)
+        describe_tensor("sourceT", sourceT)
 
         # Get attention
         # (batch x queryL x idf)(batch x idf x sourceL)
         # -->batch x queryL x sourceL
+        print(torch.bmm)
         attn = torch.bmm(targetT, sourceT)
+        describe_tensor("attn",attn)
         # --> batch*queryL x sourceL
         attn = attn.view(batch_size*queryL, sourceL)
+        describe_tensor("attn",attn)
         if self.mask is not None:
             # batch_size x sourceL --> batch_size*queryL x sourceL
             mask = self.mask.repeat(queryL, 1)
+            print(attn)
             attn.data.masked_fill_(mask.data, -float('inf'))
+            print("------------------------------------------------------------------------------------\n",attn)
+        print(self.sm)
         attn = self.sm(attn)  # Eq. (2)
+        describe_tensor("attn",attn)
         # --> batch x queryL x sourceL
         attn = attn.view(batch_size, queryL, sourceL)
+        describe_tensor("attn",attn)
         # --> batch x sourceL x queryL
         attn = torch.transpose(attn, 1, 2).contiguous()
+        describe_tensor("attn",attn)
 
         # (batch x idf x sourceL)(batch x sourceL x queryL)
         # --> batch x idf x queryL
         weightedContext = torch.bmm(sourceT, attn)
+        describe_tensor("weightedContext",weightedContext)
         weightedContext = weightedContext.view(batch_size, -1, ih, iw)
+        describe_tensor("weightedContext",weightedContext)
         attn = attn.view(batch_size, -1, ih, iw)
+        describe_tensor("attn",attn)
 
         return weightedContext, attn
 
@@ -621,17 +685,34 @@ class NEXT_STAGE_G(nn.Module):
             c_code1: batch x idf x queryL
             att1: batch x sourceL x queryL
         """
+        describe_tensor("h_code",h_code)
+        describe_tensor("word_embs",word_embs)
+        describe_tensor("c_code",c_code)
+        describe_tensor("mask",mask)
+        print("self.gf_dim =" , self.gf_dim ,
+        "\nself.ef_dim =" , self.ef_dim , 
+        "\nself.cf_dim =" ,  self.cf_dim,
+        "\nself.num_residual=" , self.num_residual
+        )
         print ("73. Calling applyMask of GlobalAttentionGeneral(att)")
         self.att.applyMask(mask)
         print ("74. finished applyMask of GlobalAttentionGeneral(att)")
         print ("75. Calling forward of GlobalAttentionGeneral(att)")
         c_code, att = self.att(h_code, word_embs)
         print ("76. finished forward of GlobalAttentionGeneral(att)")
+        describe_tensor("h_code",h_code)
+        describe_tensor("c_code",c_code)
+        
         h_c_code = torch.cat((h_code, c_code), 1)
+        describe_tensor("h_c_code",h_c_code)
+        print(self.residual)
         out_code = self.residual(h_c_code)
+        describe_tensor("out_code",out_code)
 
         # state size ngf/2 x 2in_size x 2in_size
+        print(self.upsample)
         out_code = self.upsample(out_code)
+        describe_tensor("out_code",out_code)
 
         return out_code, att
 
@@ -689,20 +770,20 @@ class G_NET(nn.Module):
 
     def forward(self, z_code, sent_emb, word_embs, mask):
         """
-            :param z_code: batch x cfg.GAN.Z_DIM
-            :param sent_emb: batch x cfg.TEXT.EMBEDDING_DIM
-            :param word_embs: batch x cdf x seq_len
-            :param mask: batch x seq_len
+            :param z_code: batch x cfg.GAN.Z_DIM 
+            :param sent_emb: batch x cfg.TEXT.EMBEDDING_DIM 
+            :param word_embs: batch x cdf x seq_len   
+            :param mask: batch x seq_len   
             :return:
         """
-        describe_tensor("z_code " , z_code)
-        describe_tensor(" sent_emb" ,sent_emb )
-        describe_tensor("word_embs" ,word_embs )
-        describe_tensor("mask " ,mask )
+        describe_tensor("z_code " , z_code) # torch.Size([16, 100])
+        describe_tensor(" sent_emb" ,sent_emb ) # torch.Size([16, 256])
+        describe_tensor("word_embs" ,word_embs ) # torch.Size([16, 256, 22])
+        describe_tensor("mask " ,mask ) # torch.Size([16, 22])
         fake_imgs = []
         att_maps = []
         print ("61. Calling forward of CA_NET (ca_net)")
-        c_code, mu, logvar = self.ca_net(sent_emb)
+        c_code, mu, logvar = self.ca_net(sent_emb) # c_code : size :  torch.Size([16, 100])
         print ("66. finished forward of CA_NET (ca_net)")
 
         if BRANCH_NUM > 0:
@@ -738,6 +819,8 @@ class G_NET(nn.Module):
             print ("85. appended third stage images (fake_imgs3) to the full list (fake_imgs) ")
             if att2 is not None:
                 att_maps.append(att2)
+                describe_tensor("att_maps[0]" , att_maps[0])
+                describe_tensor("att_maps[1]" , att_maps[1])
 
         return fake_imgs, att_maps, mu, logvar
 
