@@ -90,8 +90,8 @@ def get_imgs(img_path, imsize, bbox=None,
 
 class TextDataset(data.Dataset):
     def __init__(self, data_dir, split='train',
-                 base_size=64,
-                 transform=None, target_transform=None):
+                    base_size=64,
+                    transform=None, target_transform=None):
         self.transform = transform
         self.norm = transforms.Compose([
             transforms.ToTensor(),
@@ -228,7 +228,7 @@ class TextDataset(data.Dataset):
                 self.build_dictionary(train_captions, test_captions)
             with open(filepath, 'wb') as f:
                 pickle.dump([train_captions, test_captions,
-                             ixtoword, wordtoix], f, protocol=2)
+                                ixtoword, wordtoix], f, protocol=2)
                 print('Save to: ', filepath)
         else:
             with open(filepath, 'rb') as f:
