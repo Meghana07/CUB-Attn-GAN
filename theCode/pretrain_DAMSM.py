@@ -84,7 +84,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
 
         w_loss0, w_loss1, attn_maps = words_loss(words_features, words_emb, labels,
-                                                 cap_lens, class_ids, batch_size)
+                                                    cap_lens, class_ids, batch_size)
         w_total_loss0 += w_loss0.data
         w_total_loss1 += w_loss1.data
         loss = w_loss0 + w_loss1
@@ -100,7 +100,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         # `clip_grad_norm` helps prevent
         # the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm(rnn_model.parameters(),
-                                      cfg.TRAIN.RNN_GRAD_CLIP)
+                                        cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
         if step % UPDATE_INTERVAL == 0:
@@ -124,12 +124,12 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
 
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | '
-                  's_loss {:5.2f} {:5.2f} | '
-                  'w_loss {:5.2f} {:5.2f}'
-                  .format(epoch, step, len(dataloader),
+                    's_loss {:5.2f} {:5.2f} | '
+                    'w_loss {:5.2f} {:5.2f}'
+                    .format(epoch, step, len(dataloader),
                           elapsed * 1000. / UPDATE_INTERVAL,
-                          s_cur_loss0, s_cur_loss1,
-                          w_cur_loss0, w_cur_loss1))
+                            s_cur_loss0, s_cur_loss1,
+                            w_cur_loss0, w_cur_loss1))
             s_total_loss0 = 0
             s_total_loss1 = 0
             w_total_loss0 = 0
@@ -264,8 +264,8 @@ if __name__ == "__main__":
         transforms.RandomCrop(imsize),
         transforms.RandomHorizontalFlip()])
     dataset = TextDataset(cfg.DATA_DIR, 'train',
-                          base_size=cfg.TREE.BASE_SIZE,
-                          transform=image_transform)
+                            base_size=cfg.TREE.BASE_SIZE,
+                            transform=image_transform)
 
     print(dataset.n_words, dataset.embeddings_num)
     assert dataset
@@ -275,8 +275,8 @@ if __name__ == "__main__":
 
     # # validation data #
     dataset_val = TextDataset(cfg.DATA_DIR, 'test',
-                              base_size=cfg.TREE.BASE_SIZE,
-                              transform=image_transform)
+                                base_size=cfg.TREE.BASE_SIZE,
+                                transform=image_transform)
     dataloader_val = torch.utils.data.DataLoader(
         dataset_val, batch_size=batch_size, drop_last=True,
         shuffle=True, num_workers=int(cfg.WORKERS))
@@ -300,15 +300,15 @@ if __name__ == "__main__":
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
             count = train(dataloader, image_encoder, text_encoder,
-                          batch_size, labels, optimizer, epoch,
-                          dataset.ixtoword, image_dir)
+                            batch_size, labels, optimizer, epoch,
+                            dataset.ixtoword, image_dir)
             print('-' * 89)
             if len(dataloader_val) > 0:
                 s_loss, w_loss = evaluate(dataloader_val, image_encoder,
-                                          text_encoder, batch_size)
+                                            text_encoder, batch_size)
                 print('| end epoch {:3d} | valid loss '
-                      '{:5.2f} {:5.2f} | lr {:.5f}|'
-                      .format(epoch, s_loss, w_loss, lr))
+                        '{:5.2f} {:5.2f} | lr {:.5f}|'
+                        .format(epoch, s_loss, w_loss, lr))
             print('-' * 89)
             if lr > 0.0002 : #cfg.TRAIN.ENCODER_LR/10.:
                 lr *= 0.98
@@ -319,14 +319,14 @@ if __name__ == "__main__":
 
             if (epoch % 8 == 0 or epoch == cfg.TRAIN.MAX_EPOCH or epoch == cfg.TRAIN.MAX_EPOCH-1 ):
                 torch.save(image_encoder.state_dict(),
-                           '%s/image_encoder%d.pth' % (model_dir, epoch))
+                            '%s/image_encoder%d.pth' % (model_dir, epoch))
                 mydrivemodel = '/content/drive/My Drive/cubModel'
                 torch.save(image_encoder.state_dict(),
-                           '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
+                            '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
                 torch.save(text_encoder.state_dict(),
-                           '%s/text_encoder%d.pth' % (model_dir, epoch))
+                            '%s/text_encoder%d.pth' % (model_dir, epoch))
                 torch.save(text_encoder.state_dict(),
-                           '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
+                            '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
                 print('Save G/Ds models.')
                 
     except KeyboardInterrupt:
