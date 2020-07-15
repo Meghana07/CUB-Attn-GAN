@@ -438,7 +438,7 @@ class TextDataset(data.Dataset):
 
         self.filenames, self.captions, self.ixtoword, self.wordtoix, self.n_words = self.load_text_data(data_dir, split)
         #filenames: List of 8855 text items of image names
-        #captions: List of 885 varible lengths captions -in range 9-18 -
+        #captions: List of 8855 varible lengths captions -in range 9-18 -
         #ixtoword: dictionry  of 5450 index [key] to word [value] pairs
         #wordtoix: dictionry  of 5450 word [key] to index [value] pairs
         #n_words: 5450
