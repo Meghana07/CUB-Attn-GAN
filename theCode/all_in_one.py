@@ -689,10 +689,8 @@ class RNN_ENCODER(nn.Module):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).data
         if self.rnn_type == 'LSTM':
-            return (Variable(weight.new(self.nlayers * self.num_directions,
-                                        bsz, self.nhidden).zero_()),
-                    Variable(weight.new(self.nlayers * self.num_directions,
-                                        bsz, self.nhidden).zero_()))
+            return (Variable(weight.new(self.nlayers * self.num_directions, bsz, self.nhidden).zero_()),
+                    Variable(weight.new(self.nlayers * self.num_directions,bsz, self.nhidden).zero_()))
         else:
             return Variable(weight.new(self.nlayers * self.num_directions,
                                         bsz, self.nhidden).zero_())
@@ -701,28 +699,50 @@ class RNN_ENCODER(nn.Module):
         # input: torch.LongTensor of size batch x n_steps
         # --> emb: batch x n_steps x ninput
         emb = self.drop(self.encoder(captions))
+
         #
         # Returns: a PackedSequence object
         cap_lens = cap_lens.data.tolist()
         emb = pack_padded_sequence(emb, cap_lens, batch_first=True)
+        #emb[0]: a tensor of torch.Size([660, 300])
+        #emb[1]: a tensor of torch.Size([18])
+        #emb[2]: None
+        #emb[3]: None
+
+
+
+
         # #hidden and memory (num_layers * num_directions, batch, hidden_size):
         # tensor containing the initial hidden state for each element in batch.
         # #output (batch, seq_len, hidden_size * num_directions)
         # #or a PackedSequence object:
         # tensor containing output features (h_t) from the last layer of RNN
+
+
         output, hidden = self.rnn(emb, hidden)
+        #output[0]: a tensor of torch.Size([660, 256])
+        #output[1]: a tensor of torch.Size([18])
+        #output[2]: None
+        #output[3]: None
+        #hidden : a tuple of 2 tensors of torch.Size([2, 48, 128])
+
+
         # PackedSequence object
         # --> (batch, seq_len, hidden_size * num_directions)
-        output = pad_packed_sequence(output, batch_first=True)[0]
+
+        output = pad_packed_sequence(output, batch_first=True)[0] # torch.Size([48, 18, 256])
+        
         # output = self.drop(output)
         # --> batch x hidden_size*num_directions x seq_len
-        words_emb = output.transpose(1, 2)
+        
+        words_emb = output.transpose(1, 2) #torch.Size([48, 256, 18])
+        
         # --> batch x num_directions*hidden_size
         if self.rnn_type == 'LSTM':
-            sent_emb = hidden[0].transpose(0, 1).contiguous()
+            sent_emb = hidden[0].transpose(0, 1).contiguous()#torch.Size([48, 2, 128])
         else:
             sent_emb = hidden.transpose(0, 1).contiguous()
-        sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)
+        sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)#torch.Size([48, 256])
         return words_emb, sent_emb
 
 class CNN_ENCODER(nn.Module):
@@ -1039,21 +1059,21 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
     count = (epoch + 1) * len(dataloader)
     start_time = time.time()
     for step, data in enumerate(dataloader, 0):
-        # Loading the first batch
+        # Loading the first batch (number of batches/steps in an epoch is 183)
         rnn_model.zero_grad()
         cnn_model.zero_grad()
 
         imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
 
 
-        # words_features: batch_size x nef x 17 x 17
-        # sent_code: batch_size x nef
+        # words_features: batch_size x 256 x 17 x 17 ==> # image region features
+        # sent_code: batch_size x 256                ==> # global image features
         words_features, sent_code = cnn_model(imgs[-1])
         # --> batch_size x nef x 17*17
-        nef, att_sze = words_features.size(1), words_features.size(2)
+        nef, att_sze = words_features.size(1), words_features.size(2)# 256, 17(16th of the whole image)
         # words_features = words_features.view(batch_size, nef, -1)
 
-        hidden = rnn_model.init_hidden(batch_size)
+        hidden = rnn_model.init_hidden(batch_size) # A tuple of 2 zero tensor of torch.Size([2, 48, 128])
         # words_emb: batch_size x nef x seq_len
         # sent_emb: batch_size x nef
         words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
@@ -1240,6 +1260,10 @@ if __name__ == "__main__":
     #class_ids: a 48 ints list in range 0-200 of the classes
     #keys: a 48 string list  of the classes classes nammes crosspondening to the class_ids
     
+
+    # # validation data #
+    dataset_val = TextDataset(cfg.DATA_DIR, 'test', base_size=cfg.TREE.BASE_SIZE,transform=image_transform)
+    dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, drop_last=True,shuffle=True, num_workers=int(cfg.WORKERS))
 
     # Train ##############################################################
     text_encoder, image_encoder, labels, start_epoch = build_models()

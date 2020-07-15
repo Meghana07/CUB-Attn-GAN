@@ -404,3 +404,21 @@ CNN_ENCODER(
   (emb_cnn_code): Linear(in_features=2048, out_features=256, bias=True)
 )
     '''
+
+'''
+RNN_ENCODER(
+(encoder): Embedding(5450, 300)
+
+      A simple lookup table that stores embeddings of a fixed dictionary and size.
+
+      This module is often used to store word embeddings and retrieve them using indices.
+      The input to the module is a list of indices, and the output is the corresponding
+      word embeddings.
+
+      Args:
+      num_embeddings (int): size of the dictionary of embeddings
+      embedding_dim (int): the size of each embedding vector
+
+(drop): Dropout(p=0.5, inplace=False)
+(rnn): LSTM(300, 128, batch_first=True, dropout=0.5, bidirectional=True))
+'''
