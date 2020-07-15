@@ -1,0 +1,27 @@
+RNN:
+    0
+    torch.Size([5450, 300])
+    1
+    torch.Size([512, 300])
+    2
+    torch.Size([512, 128])
+    3
+    torch.Size([512])
+    4
+    torch.Size([512])
+    5
+    torch.Size([512, 300])
+    6
+    torch.Size([512, 128])
+    7
+    torch.Size([512])
+    8
+    torch.Size([512])
+
+CNN:
+    torch.Size([256, 768, 1, 1])
+    1
+    torch.Size([256, 2048])
+    2
+    torch.Size([256])
+    3

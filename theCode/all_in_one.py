@@ -4,12 +4,17 @@ import sys
 import time
 import random
 import pprint
+import datetime
+import dateutil.tz
 import numpy as np
 import numpy.random as random
 import pandas as pd
-from PIL import Image
 import pickle
 from easydict import EasyDict as edict
+
+from PIL import Image, ImageDraw, ImageFont
+from copy import deepcopy
+import skimage.transform
 
 import torch
 
@@ -118,8 +123,7 @@ def prepare_data(data):
     imgs, captions, captions_lens, class_ids, keys = data
 
     # sort data by the length in a decreasing order !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MARKER!!!!!!!!!!!!!!!!!!!!!!!!
-    sorted_cap_lens, sorted_cap_indices = \
-        torch.sort(captions_lens, 0, True)
+    sorted_cap_lens, sorted_cap_indices = torch.sort(captions_lens, 0, True)
 
     real_imgs = []
     for i in range(len(imgs)):
@@ -157,6 +161,21 @@ def build_super_images(real_imgs, captions, ixtoword,
                         attn_maps, att_sze, lr_imgs=None,
                         batch_size=cfg.TRAIN.BATCH_SIZE,
                         max_word_num=cfg.TEXT.WORDS_NUM):
+    
+    
+    COLOR_DIC = {0:[128,64,128],  1:[244, 35,232],
+                2:[70, 70, 70],  3:[102,102,156],
+                4:[190,153,153], 5:[153,153,153],
+                6:[250,170, 30], 7:[220, 220, 0],
+                8:[107,142, 35], 9:[152,251,152],
+                10:[70,130,180], 11:[220,20, 60],
+                12:[255, 0, 0],  13:[0, 0, 142],
+                14:[119,11, 32], 15:[0, 60,100],
+                16:[0, 80, 100], 17:[0, 0, 230],
+                18:[0,  0, 70],  19:[0, 0,  0]}
+    FONT_MAX = 50
+
+    
     build_super_images_start_time = time.time()
     nvis = 8
     real_imgs = real_imgs[:nvis]
@@ -386,6 +405,10 @@ def build_super_images(real_imgs, captions, ixtoword,
         print("KeyTime |||||||||||||||||||||||||||||||")
         return None
 
+def conv1x1(in_planes, out_planes, bias=False):
+    "1x1 convolution with padding"
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1,
+                     padding=0, bias=bias)
 
 
 class TextDataset(data.Dataset):
@@ -399,24 +422,30 @@ class TextDataset(data.Dataset):
         self.target_transform = target_transform
         self.embeddings_num = cfg.TEXT.CAPTIONS_PER_IMAGE
 
-        self.imsize = []
+        self.imsize = []# [299]
         for i in range(cfg.TREE.BRANCH_NUM):
             self.imsize.append(base_size)
             base_size = base_size * 2
+        print("self.imsize", self.imsize)
 
         self.data = []
         self.data_dir = data_dir
         if data_dir.find('birds') != -1:
-            self.bbox = self.load_bbox()
+            self.bbox = self.load_bbox() # 11788 long dictionry with key as image name and value is 4 ints list bounding box
         else:
             self.bbox = None
         split_dir = os.path.join(data_dir, split)
 
-        self.filenames, self.captions, self.ixtoword, \
-            self.wordtoix, self.n_words = self.load_text_data(data_dir, split)
+        self.filenames, self.captions, self.ixtoword, self.wordtoix, self.n_words = self.load_text_data(data_dir, split)
+        #filenames: List of 8855 text items of image names
+        #captions: List of 885 varible lengths captions -in range 9-18 -
+        #ixtoword: dictionry  of 5450 index [key] to word [value] pairs
+        #wordtoix: dictionry  of 5450 word [key] to index [value] pairs
+        #n_words: 5450
 
-        self.class_id = self.load_class_id(split_dir, len(self.filenames))
-        self.number_example = len(self.filenames)
+        self.class_id = self.load_class_id(split_dir, len(self.filenames)) #200 classes, len:8855
+
+        self.number_example = len(self.filenames) #8855
 
     def load_bbox(self):
         data_dir = self.data_dir
@@ -426,8 +455,7 @@ class TextDataset(data.Dataset):
                                         header=None).astype(int)
         #
         filepath = os.path.join(data_dir, 'CUB_200_2011/images.txt')
-        df_filenames = \
-            pd.read_csv(filepath, delim_whitespace=True, header=None)
+        df_filenames = pd.read_csv(filepath, delim_whitespace=True, header=None)
         filenames = df_filenames[1].tolist()
         print('Total filenames: ', len(filenames), filenames[0])
         #
@@ -613,21 +641,21 @@ class TextDataset(data.Dataset):
 
 class RNN_ENCODER(nn.Module):
     def __init__(self, ntoken, ninput=300, drop_prob=0.5,
-                 nhidden=128, nlayers=1, bidirectional=True):
+                    nhidden=128, nlayers=1, bidirectional=True):
         super(RNN_ENCODER, self).__init__()
-        self.n_steps = cfg.TEXT.WORDS_NUM
-        self.ntoken = ntoken  # size of the dictionary
-        self.ninput = ninput  # size of each embedding vector
-        self.drop_prob = drop_prob  # probability of an element to be zeroed
-        self.nlayers = nlayers  # Number of recurrent layers
-        self.bidirectional = bidirectional
-        self.rnn_type = cfg.RNN_TYPE
+        self.n_steps = cfg.TEXT.WORDS_NUM # max length and padded to captions= 18
+        self.ntoken = ntoken  # size of the dictionary = 5450
+        self.ninput = ninput  # size of each embedding vector = 300
+        self.drop_prob = drop_prob  # probability of an element to be zeroed = 0.5
+        self.nlayers = nlayers  # Number of recurrent layers =1
+        self.bidirectional = bidirectional # True
+        self.rnn_type = cfg.RNN_TYPE #LSTM
         if bidirectional:
             self.num_directions = 2
         else:
             self.num_directions = 1
         # number of features in the hidden state
-        self.nhidden = nhidden // self.num_directions
+        self.nhidden = nhidden // self.num_directions # 128
 
         self.define_module()
         self.init_weights()
@@ -639,14 +667,14 @@ class RNN_ENCODER(nn.Module):
             # dropout: If non-zero, introduces a dropout layer on
             # the outputs of each RNN layer except the last layer
             self.rnn = nn.LSTM(self.ninput, self.nhidden,
-                               self.nlayers, batch_first=True,
-                               dropout=self.drop_prob,
-                               bidirectional=self.bidirectional)
+                                self.nlayers, batch_first=True,
+                                dropout=self.drop_prob,
+                                bidirectional=self.bidirectional)
         elif self.rnn_type == 'GRU':
             self.rnn = nn.GRU(self.ninput, self.nhidden,
-                              self.nlayers, batch_first=True,
-                              dropout=self.drop_prob,
-                              bidirectional=self.bidirectional)
+                                self.nlayers, batch_first=True,
+                                dropout=self.drop_prob,
+                                bidirectional=self.bidirectional)
         else:
             raise NotImplementedError
 
@@ -667,7 +695,7 @@ class RNN_ENCODER(nn.Module):
                                         bsz, self.nhidden).zero_()))
         else:
             return Variable(weight.new(self.nlayers * self.num_directions,
-                                       bsz, self.nhidden).zero_())
+                                        bsz, self.nhidden).zero_())
 
     def forward(self, captions, cap_lens, hidden, mask=None):
         # input: torch.LongTensor of size batch x n_steps
@@ -805,16 +833,200 @@ class CNN_ENCODER(nn.Module):
         return features, cnn_code
 
 
+def drawCaption(convas, captions, ixtoword, vis_size, off1=2, off2=2):
+    
+    FONT_MAX = 50
+
+    num = captions.size(0)
+    img_txt = Image.fromarray(convas)
+    # get a font
+    # fnt = None  # ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
+    print ("CURRENT WORKING DIRCTORY : " , os.getcwd())
+    fnt = ImageFont.truetype('Pillow/Tests/fonts/FreeMono.ttf', 50)
+    # get a drawing context
+    d = ImageDraw.Draw(img_txt)
+    sentence_list = []
+    for i in range(num):
+        cap = captions[i].data.cpu().numpy()
+        sentence = []
+        for j in range(len(cap)):
+            if cap[j] == 0:
+                break
+            word = ixtoword[cap[j]].encode('ascii', 'ignore').decode('ascii')
+            d.text(((j + off1) * (vis_size + off2), i * FONT_MAX), '%d:%s' % (j, word[:6]),
+                   font=fnt, fill=(255, 255, 255, 255))
+            sentence.append(word)
+        sentence_list.append(sentence)
+    return img_txt, sentence_list
+
+def cosine_similarity(x1, x2, dim=1, eps=1e-8):
+    """Returns cosine similarity between x1 and x2, computed along dim.
+    """
+    w12 = torch.sum(x1 * x2, dim)
+    w1 = torch.norm(x1, 2, dim)
+    w2 = torch.norm(x2, 2, dim)
+    return (w12 / (w1 * w2).clamp(min=eps)).squeeze()
+
+def sent_loss(cnn_code, rnn_code, labels, class_ids,
+              batch_size, eps=1e-8):
+    # ### Mask mis-match samples  ###
+    # that come from the same class as the real sample ###
+    masks = []
+    if class_ids is not None:
+        for i in range(batch_size):
+            mask = (class_ids == class_ids[i]).astype(np.uint8)
+            mask[i] = 0
+            masks.append(mask.reshape((1, -1)))
+        masks = np.concatenate(masks, 0)
+        # masks: batch_size x batch_size
+        masks = torch.BoolTensor(masks)
+        if cfg.CUDA:
+            masks = masks.cuda()
+
+    # --> seq_len x batch_size x nef
+    if cnn_code.dim() == 2:
+        cnn_code = cnn_code.unsqueeze(0)
+        rnn_code = rnn_code.unsqueeze(0)
+
+    # cnn_code_norm / rnn_code_norm: seq_len x batch_size x 1
+    cnn_code_norm = torch.norm(cnn_code, 2, dim=2, keepdim=True)
+    rnn_code_norm = torch.norm(rnn_code, 2, dim=2, keepdim=True)
+    # scores* / norm*: seq_len x batch_size x batch_size
+    scores0 = torch.bmm(cnn_code, rnn_code.transpose(1, 2))
+    norm0 = torch.bmm(cnn_code_norm, rnn_code_norm.transpose(1, 2))
+    scores0 = scores0 / norm0.clamp(min=eps) * cfg.TRAIN.SMOOTH.GAMMA3
+
+    # --> batch_size x batch_size
+    scores0 = scores0.squeeze()
+    if class_ids is not None:
+        scores0.data.masked_fill_(masks, -float('inf'))
+    scores1 = scores0.transpose(0, 1)
+    if labels is not None:
+        loss0 = nn.CrossEntropyLoss()(scores0, labels)
+        loss1 = nn.CrossEntropyLoss()(scores1, labels)
+    else:
+        loss0, loss1 = None, None
+    return loss0, loss1
 
 
+def words_loss(img_features, words_emb, labels,
+               cap_lens, class_ids, batch_size):
+    """
+        words_emb(query): batch x nef x seq_len
+        img_features(context): batch x nef x 17 x 17
+    """
+    masks = []
+    att_maps = []
+    similarities = []
+    cap_lens = cap_lens.data.tolist()
+    for i in range(batch_size):
+        if class_ids is not None:
+            mask = (class_ids == class_ids[i]).astype(np.uint8)
+            mask[i] = 0
+            masks.append(mask.reshape((1, -1)))
+        # Get the i-th text description
+        words_num = cap_lens[i]
+        # -> 1 x nef x words_num
+        word = words_emb[i, :, :words_num].unsqueeze(0).contiguous()
+        # -> batch_size x nef x words_num
+        word = word.repeat(batch_size, 1, 1)
+        # batch x nef x 17*17
+        context = img_features
+        """
+            word(query): batch x nef x words_num
+            context: batch x nef x 17 x 17
+            weiContext: batch x nef x words_num
+            attn: batch x words_num x 17 x 17
+        """
+        weiContext, attn = func_attention(word, context, cfg.TRAIN.SMOOTH.GAMMA1)
+        att_maps.append(attn[i].unsqueeze(0).contiguous())
+        # --> batch_size x words_num x nef
+        word = word.transpose(1, 2).contiguous()
+        weiContext = weiContext.transpose(1, 2).contiguous()
+        # --> batch_size*words_num x nef
+        word = word.view(batch_size * words_num, -1)
+        weiContext = weiContext.view(batch_size * words_num, -1)
+        #
+        # -->batch_size*words_num
+        row_sim = cosine_similarity(word, weiContext)
+        # --> batch_size x words_num
+        row_sim = row_sim.view(batch_size, words_num)
 
+        # Eq. (10)
+        row_sim.mul_(cfg.TRAIN.SMOOTH.GAMMA2).exp_()
+        row_sim = row_sim.sum(dim=1, keepdim=True)
+        row_sim = torch.log(row_sim)
+
+        # --> 1 x batch_size
+        # similarities(i, j): the similarity between the i-th image and the j-th text description
+        similarities.append(row_sim)
+
+    # batch_size x batch_size
+    similarities = torch.cat(similarities, 1)
+    if class_ids is not None:
+        masks = np.concatenate(masks, 0)
+        # masks: batch_size x batch_size
+        masks = torch.BoolTensor(masks)
+        if cfg.CUDA:
+            masks = masks.cuda()
+
+    similarities = similarities * cfg.TRAIN.SMOOTH.GAMMA3
+    if class_ids is not None:
+        similarities.data.masked_fill_(masks, -float('inf'))
+    similarities1 = similarities.transpose(0, 1)
+    if labels is not None:
+        loss0 = nn.CrossEntropyLoss()(similarities, labels)
+        loss1 = nn.CrossEntropyLoss()(similarities1, labels)
+    else:
+        loss0, loss1 = None, None
+    return loss0, loss1, att_maps
+
+def func_attention(query, context, gamma1):
+    """
+    query: batch x ndf x queryL
+    context: batch x ndf x ih x iw (sourceL=ihxiw)
+    mask: batch_size x sourceL
+    """
+    batch_size, queryL = query.size(0), query.size(2)
+    ih, iw = context.size(2), context.size(3)
+    sourceL = ih * iw
+
+    # --> batch x sourceL x ndf
+    context = context.view(batch_size, -1, sourceL)
+    contextT = torch.transpose(context, 1, 2).contiguous()
+
+    # Get attention
+    # (batch x sourceL x ndf)(batch x ndf x queryL)
+    # -->batch x sourceL x queryL
+    attn = torch.bmm(contextT, query) # Eq. (7) in AttnGAN paper
+    # --> batch*sourceL x queryL
+    attn = attn.view(batch_size*sourceL, queryL)
+    attn = nn.Softmax()(attn)  # Eq. (8)
+
+    # --> batch x sourceL x queryL
+    attn = attn.view(batch_size, sourceL, queryL)
+    # --> batch*queryL x sourceL
+    attn = torch.transpose(attn, 1, 2).contiguous()
+    attn = attn.view(batch_size*queryL, sourceL)
+    #  Eq. (9)
+    attn = attn * gamma1
+    attn = nn.Softmax()(attn)
+    attn = attn.view(batch_size, queryL, sourceL)
+    # --> batch x sourceL x queryL
+    attnT = torch.transpose(attn, 1, 2).contiguous()
+
+    # (batch x ndf x sourceL)(batch x sourceL x queryL)
+    # --> batch x ndf x queryL
+    weightedContext = torch.bmm(context, attnT)
+
+    return weightedContext, attn.view(batch_size, -1, ih, iw)
 
 
 def train(dataloader, cnn_model, rnn_model, batch_size,
             labels, optimizer, epoch, ixtoword, image_dir):
     train_function_start_time = time.time()
-    cnn_model.train()
-    rnn_model.train()
+    cnn_model.train() #Sets the module in training mode.
+    rnn_model.train() #Sets the module in training mode.
     s_total_loss0 = 0
     s_total_loss1 = 0
     w_total_loss0 = 0
@@ -827,12 +1039,11 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
     count = (epoch + 1) * len(dataloader)
     start_time = time.time()
     for step, data in enumerate(dataloader, 0):
-        # print('step', step) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MARKER!!!!!!!!!!!!!!!!!!!!!!!!
+        # Loading the first batch
         rnn_model.zero_grad()
         cnn_model.zero_grad()
 
-        imgs, captions, cap_lens, \
-            class_ids, keys = prepare_data(data)
+        imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
 
 
         # words_features: batch_size x nef x 17 x 17
@@ -955,8 +1166,18 @@ def evaluate(dataloader, cnn_model, rnn_model, batch_size):
 def build_models():
     # build model ############################################################
     text_encoder = RNN_ENCODER(dataset.n_words, nhidden=cfg.TEXT.EMBEDDING_DIM)
+    '''
+    RNN_ENCODER(
+    (encoder): Embedding(5450, 300)
+    (drop): Dropout(p=0.5, inplace=False)
+    (rnn): LSTM(300, 128, batch_first=True, dropout=0.5, bidirectional=True))
+    '''
     image_encoder = CNN_ENCODER(cfg.TEXT.EMBEDDING_DIM)
+
     labels = Variable(torch.LongTensor(range(batch_size)))
+    '''
+    A tensor of [0,1,2,3,...,47]
+    '''
     start_epoch = 0
     if cfg.TRAIN.NET_E != '':
         state_dict = torch.load(cfg.TRAIN.NET_E)
@@ -982,16 +1203,16 @@ def build_models():
 
 
 __name__ = "__main__"
-UPDATE_INTERVAL = 200
 if __name__ == "__main__":
     print('Using config:')
     pprint.pprint(cfg)
 
+    UPDATE_INTERVAL = 200
+
     ##########################################################################
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
-    output_dir = '../output/%s_%s_%s' % \
-        (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
+    output_dir = '../output/%s_%s_%s' % (cfg.DATASET_NAME, cfg.CONFIG_NAME, timestamp)
 
     model_dir = os.path.join(output_dir, 'Model')
     image_dir = os.path.join(output_dir, 'Image')
@@ -1002,28 +1223,35 @@ if __name__ == "__main__":
     cudnn.benchmark = True
 
     # Get data loader ##################################################
-    imsize = cfg.TREE.BASE_SIZE * (2 ** (cfg.TREE.BRANCH_NUM-1))
-    batch_size = cfg.TRAIN.BATCH_SIZE
+    imsize = 299
+    batch_size = 48
 
-    image_transform = transforms.Compose([transforms.Scale(int(imsize * 76 / 64)), transforms.RandomCrop(imsize), transforms.RandomHorizontalFlip()])
+    image_transform = transforms.Compose([transforms.Scale(355), transforms.RandomCrop(imsize), transforms.RandomHorizontalFlip()])
     
     dataset = TextDataset(cfg.DATA_DIR, 'train', base_size=cfg.TREE.BASE_SIZE, transform=image_transform)
     print(dataset.n_words, dataset.embeddings_num)
     assert dataset
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=int(cfg.WORKERS))
+    #using prepare data functiont this dataloader yieldes:
+    #imgs: a list of 1 tensor of size torch.Size([48, 3, 299, 299])
+    #captons: a  tensor of size torch.Size([48, 18]), shorter filled with end words converted by word to index
+    #cap_lens: a  tensor of size torch.Size([48]) , acual caps lens order from big to small (max is 18)
+    #class_ids: a 48 ints list in range 0-200 of the classes
+    #keys: a 48 string list  of the classes classes nammes crosspondening to the class_ids
+    
 
     # Train ##############################################################
     text_encoder, image_encoder, labels, start_epoch = build_models()
-    para = list(text_encoder.parameters())
-    for v in image_encoder.parameters():
+    para = list(text_encoder.parameters()) # 9 paramters
+    for v in image_encoder.parameters(): # 3 parameters
         if v.requires_grad:
             para.append(v)
     # optimizer = optim.Adam(para, lr=cfg.TRAIN.ENCODER_LR, betas=(0.5, 0.999))
     # At any point you can hit Ctrl + C to break out of training early.
 
     try:
-        lr = cfg.TRAIN.ENCODER_LR
+        lr = cfg.TRAIN.ENCODER_LR #0.002
         print("keyword |||||||||||||||||||||||||||||||")
         print("Start_epoch : " , start_epoch)
         print("cfg.TRAIN.MAX_EPOCH : " , cfg.TRAIN.MAX_EPOCH )
