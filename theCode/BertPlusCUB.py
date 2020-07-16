@@ -122,7 +122,7 @@ def get_imgs(img_path, imsize, bbox=None,
     return ret
 
 def prepare_data(data):
-    imgs, captions, captions_lens, class_ids, keys = data
+    imgs, captions, captions_lens, class_ids, keys, input_ids, segments_ids = data
 
     # sort data by the length in a decreasing order !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!MARKER!!!!!!!!!!!!!!!!!!!!!!!!
     sorted_cap_lens, sorted_cap_indices = torch.sort(captions_lens, 0, True)
@@ -148,7 +148,7 @@ def prepare_data(data):
         sorted_cap_lens = Variable(sorted_cap_lens)
 
     return [real_imgs, captions, sorted_cap_lens,
-            class_ids, keys]
+            class_ids, keys, input_ids, segments_ids]
 
 def mkdir_p(path):
     try:
@@ -416,7 +416,7 @@ def conv1x1(in_planes, out_planes, bias=False):
 class TextDataset(data.Dataset):
     def __init__(self, data_dir, split='train',
                     base_size=64,
-                    transform=None, target_transform=None):
+                    transform=None, target_transform=None, input_ids=None, segments_ids=None):
         self.transform = transform
         self.norm = transforms.Compose([
             transforms.ToTensor(),
@@ -448,6 +448,9 @@ class TextDataset(data.Dataset):
         self.class_id = self.load_class_id(split_dir, len(self.filenames)) #200 classes, len:8855
 
         self.number_example = len(self.filenames) #8855
+
+        self.input_ids = input_ids
+        self.segments_ids = segments_ids
 
     def load_bbox(self):
         data_dir = self.data_dir
@@ -634,7 +637,7 @@ class TextDataset(data.Dataset):
         sent_ix = random.randint(0, self.embeddings_num)
         new_sent_ix = index * self.embeddings_num + sent_ix
         caps, cap_len = self.get_caption(new_sent_ix)
-        return imgs, caps, cap_len, cls_id, key
+        return imgs, caps, cap_len, cls_id, key, self.input_ids, self.segments_ids
 
 
     def __len__(self):
@@ -1069,7 +1072,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         rnn_model.zero_grad()
         cnn_model.zero_grad()
 
-        imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
+        imgs, captions, cap_lens, class_ids, keys, input_ids, segments_ids = prepare_data(data)
 
 
         # words_features: batch_size x 256 x 17 x 17 ==> # image region features
@@ -1159,8 +1162,7 @@ def evaluate(dataloader, cnn_model, rnn_model, batch_size):
     s_total_loss = 0
     w_total_loss = 0
     for step, data in enumerate(dataloader, 0):
-        real_imgs, captions, cap_lens, \
-                class_ids, keys = prepare_data(data)
+        real_imgs, captions, cap_lens, class_ids, keys, input_ids, segments_ids = prepare_data(data)
 
         words_features, sent_code = cnn_model(real_imgs[-1])
         # nef = words_features.size(1)
@@ -1189,6 +1191,10 @@ def evaluate(dataloader, cnn_model, rnn_model, batch_size):
 def build_models():
     # build model ############################################################
     text_encoder = RNN_ENCODER(dataset.n_words, nhidden=cfg.TEXT.EMBEDDING_DIM)
+
+    bert_encoder = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = True)
+    bert_encoder.cuda()
+    bert_encoder.eval()
     '''
     RNN_ENCODER(
     (encoder): Embedding(5450, 300)
@@ -1222,7 +1228,7 @@ def build_models():
         image_encoder = image_encoder.cuda()
         labels = labels.cuda()
 
-    return text_encoder, image_encoder, labels, start_epoch
+    return text_encoder, image_encoder, labels, start_epoch, bert_encoder
 
 
 __name__ = "__main__"
@@ -1251,7 +1257,7 @@ if __name__ == "__main__":
 
     image_transform = transforms.Compose([transforms.Scale(355), transforms.RandomCrop(imsize), transforms.RandomHorizontalFlip()])
     
-    dataset = TextDataset(cfg.DATA_DIR, 'train', base_size=cfg.TREE.BASE_SIZE, transform=image_transform)
+    dataset = TextDataset(cfg.DATA_DIR, 'train', base_size=cfg.TREE.BASE_SIZE, transform=image_transform, input_ids=input_ids, segments_ids=segments_ids)
     print(dataset.n_words, dataset.embeddings_num)
     assert dataset
 
@@ -1269,7 +1275,7 @@ if __name__ == "__main__":
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, drop_last=True,shuffle=True, num_workers=int(cfg.WORKERS))
 
     # Train ##############################################################
-    text_encoder, image_encoder, labels, start_epoch = build_models()
+    text_encoder, image_encoder, labels, start_epoch, bert_encoder = build_models()
     para = list(text_encoder.parameters()) # 9 paramters
     for v in image_encoder.parameters(): # 3 parameters
         if v.requires_grad:
@@ -1290,7 +1296,7 @@ if __name__ == "__main__":
             one_epoch_start_time = time.time()
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
-            count = train(dataloader, image_encoder, text_encoder, batch_size, labels, optimizer, epoch, dataset.ixtoword, image_dir)
+            count = train(dataloader, image_encoder, text_encoder, batch_size, labels, optimizer, epoch, dataset.ixtoword, image_dir, bert_encoder)
             print('-' * 89)
             if len(dataloader_val) > 0:
                 s_loss, w_loss = evaluate(dataloader_val, image_encoder, text_encoder, batch_size)
