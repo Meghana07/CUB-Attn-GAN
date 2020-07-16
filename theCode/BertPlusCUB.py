@@ -1048,10 +1048,14 @@ def func_attention(query, context, gamma1):
     return weightedContext, attn.view(batch_size, -1, ih, iw)
 
 
-def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch, ixtoword, image_dir):
+def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch, ixtoword, image_dir, bert_encoder):
     train_function_start_time = time.time()
     cnn_model.train() #Sets the module in training mode.
     rnn_model.train() #Sets the module in training mode.
+    
+    bert_encoder.cuda()
+    bert_encoder.eval()
+    
     s_total_loss0 = 0
     s_total_loss1 = 0
     w_total_loss0 = 0
@@ -1072,7 +1076,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         rnn_model.zero_grad()
         cnn_model.zero_grad()
 
-        imgs, captions, cap_lens, class_ids, keys, input_ids, segments_ids = prepare_data(data)
+        imgs, captions, cap_lens, class_ids, keys, b_input_ids, b_segments_ids = prepare_data(data)
 
 
         # words_features: batch_size x 256 x 17 x 17 ==> # image region features
@@ -1086,6 +1090,18 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         # words_emb: batch_size x nef x seq_len
         # sent_emb: batch_size x nef
         words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
+
+        #-------------------------------------------------------------------------------
+                #---------------------------------------------------------
+                        #-----------------------------------
+        with torch.no_grad():
+            outputs = model(b_input_ids, b_segments_ids)
+            hidden_states = outputs[2]
+
+        
+                        #-----------------------------------
+                #---------------------------------------------------------
+        #-------------------------------------------------------------------------------
 
         w_loss0, w_loss1, attn_maps = words_loss(words_features, words_emb, labels, cap_lens, class_ids, batch_size)
         w_total_loss0 += w_loss0.data
@@ -1193,8 +1209,6 @@ def build_models():
     text_encoder = RNN_ENCODER(dataset.n_words, nhidden=cfg.TEXT.EMBEDDING_DIM)
 
     bert_encoder = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = True)
-    bert_encoder.cuda()
-    bert_encoder.eval()
     '''
     RNN_ENCODER(
     (encoder): Embedding(5450, 300)
