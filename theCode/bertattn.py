@@ -1103,7 +1103,7 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
             start_time = time.time()
             # attention Maps
             #Save image only every 8 epochs && Save it to The Drive
-            if (epoch % 8 == 0):
+            if (epoch % 20 == 0):
                 print("bulding images")
                 img_set, _ = build_super_images(imgs[-1].cpu(), captions, ixtoword, attn_maps, att_sze)
                 if img_set is not None:
@@ -1278,7 +1278,7 @@ if __name__ == "__main__":
             print("one_epoch_time : " , time.time() - one_epoch_start_time)
             print("KeyTime |||||||||||||||||||||||||||||||")
 
-            if (epoch % 8 == 0 or epoch == cfg.TRAIN.MAX_EPOCH or epoch == cfg.TRAIN.MAX_EPOCH-1 ):
+            if (epoch % 20 == 0 or epoch == cfg.TRAIN.MAX_EPOCH or epoch == cfg.TRAIN.MAX_EPOCH-1 ):
                 mydrivemodel = '/content/drive/My Drive/BertCUBModel'
                 torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (model_dir, epoch))
                 torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
