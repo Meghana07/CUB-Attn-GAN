@@ -870,18 +870,44 @@ class BERT_ENCODER(nn.Module):
         self.define_module(model)
         self.init_trainable_weights()
 
+        self.bert_model = model
+
     def define_module(self, model):
-        self.emb_features = conv1x1(768, self.nef)
-        self.emb_cnn_code = nn.Linear(2048, self.nef)
+        self.word_bert_code = nn.Linear(768, 256)
+        self.sent_bert_code = nn.Linear(768, 256)
 
     def init_trainable_weights(self):
         initrange = 0.1
-        self.emb_features.weight.data.uniform_(-initrange, initrange)
-        self.emb_cnn_code.weight.data.uniform_(-initrange, initrange)
+        self.word_bert_code.weight.data.uniform_(-initrange, initrange)
+        self.sent_bert_code.weight.data.uniform_(-initrange, initrange)
 
     def forward(self,  b_input_ids, b_segments_ids):
         
-        return features, cnn_code
+        outputs = self.bert_model(b_input_ids, b_segments_ids)
+        hidden_states = outputs[2]
+
+        a = torch.stack(hidden_states, dim=0)
+
+
+        word_embedding= self.word_bert_code(a)
+
+
+        word_embedding = word_embedding.permute(1,3,0,2)
+
+        word_embedding = word_embedding.sum(dim=2)
+
+
+        print ('Word Embedding Shape is: ' , word_embedding.size())
+
+        token_vecs = hidden_states[-2]
+
+        # Calculate the average of all 64 token vectors.
+        sentence_embedding = torch.mean(token_vecs, dim=1)
+        sentence_embedding= self.sent_bert_code(sentence_embedding)
+        print('Sentence Embedding Shape is: ', sentence_embedding.size())
+
+
+        return  word_embedding, sentence_embedding
 
 
 
@@ -1079,7 +1105,7 @@ def func_attention(query, context, gamma1):
 def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch, ixtoword, image_dir, bert_encoder):
     train_function_start_time = time.time()
     cnn_model.train() #Sets the module in training mode.
-    rnn_model.train() #Sets the module in training mode.
+    #rnn_model.train() #Sets the module in training mode.
     
     bert_encoder.cuda()
     bert_encoder.eval()
@@ -1101,7 +1127,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
     
     
         # Loading the first batch (number of batches/steps in an epoch is 183)
-        rnn_model.zero_grad()
+        #rnn_model.zero_grad()
         cnn_model.zero_grad()
 
         imgs, captions, cap_lens, class_ids, keys, b_input_ids, b_segments_ids = prepare_data(data)
@@ -1114,15 +1140,15 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         nef, att_sze = words_features.size(1), words_features.size(2)# 256, 17(16th of the whole image)
         # words_features = words_features.view(batch_size, nef, -1)
 
-        hidden = rnn_model.init_hidden(batch_size) # A tuple of 2 zero tensor of torch.Size([2, 48, 128])
+        #hidden = rnn_model.init_hidden(batch_size) # A tuple of 2 zero tensor of torch.Size([2, 48, 128])
         # words_emb: batch_size x nef x seq_len
         # sent_emb: batch_size x nef
-        words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
+        #words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
 
         #-------------------------------------------------------------------------------
                 #---------------------------------------------------------
                         #-----------------------------------
-        bert_encoder(b_input_ids, b_segments_ids)
+        words_emb, sent_emb =bert_encoder(b_input_ids, b_segments_ids)
                         #-----------------------------------
                 #---------------------------------------------------------
         #-------------------------------------------------------------------------------
