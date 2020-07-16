@@ -1026,7 +1026,7 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
     
     
         # Loading the first batch (number of batches/steps in an epoch is 183)
-        #rnn_model.zero_grad()
+        bert_encoder.zero_grad()
         cnn_model.zero_grad()
 
         imgs, captions, cap_lens, class_ids, keys, b_input_ids, b_segments_ids = prepare_data(data)
@@ -1066,7 +1066,7 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
         #
         # `clip_grad_norm` helps prevent
         # the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(bert_encoder.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
+        #torch.nn.utils.clip_grad_norm(bert_encoder.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
         if step % UPDATE_INTERVAL == 0:
