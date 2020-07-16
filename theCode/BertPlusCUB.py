@@ -1,4 +1,6 @@
 import os
+os.chdir('/content/AttnGAN/code/')
+
 import os.path as osp
 import sys
 import time
