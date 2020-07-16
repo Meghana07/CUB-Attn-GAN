@@ -1382,8 +1382,8 @@ if __name__ == "__main__":
                 mydrivemodel = '/content/drive/My Drive/cubModel'
                 torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (model_dir, epoch))
                 torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
-                torch.save(text_encoder.state_dict(), '%s/text_encoder%d.pth' % (model_dir, epoch))
-                torch.save(text_encoder.state_dict(), '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
+                torch.save(bert_encoder.state_dict(), '%s/text_encoder%d.pth' % (model_dir, epoch))
+                torch.save(bert_encoder.state_dict(), '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
                 print('Save G/Ds models.')
 
 
