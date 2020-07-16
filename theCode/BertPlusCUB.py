@@ -147,6 +147,9 @@ def prepare_data(data):
         captions = Variable(captions)
         sorted_cap_lens = Variable(sorted_cap_lens)
 
+    input_ids = input_ids.cuda()
+    segments_ids = segments_ids.cuda()
+
     return [real_imgs, captions, sorted_cap_lens,
             class_ids, keys, input_ids, segments_ids]
 
@@ -637,7 +640,7 @@ class TextDataset(data.Dataset):
         sent_ix = random.randint(0, self.embeddings_num)
         new_sent_ix = index * self.embeddings_num + sent_ix
         caps, cap_len = self.get_caption(new_sent_ix)
-        return imgs, caps, cap_len, cls_id, key, self.input_ids, self.segments_ids
+        return imgs, caps, cap_len, cls_id, key, self.input_ids[index], self.segments_ids[index]
 
 
     def __len__(self):
@@ -1148,7 +1151,10 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         #-------------------------------------------------------------------------------
                 #---------------------------------------------------------
                         #-----------------------------------
+        print('BBBBBBBBBBBBBBBBBBEEEEEEEEEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRRRRRTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT')
         words_emb, sent_emb =bert_encoder(b_input_ids, b_segments_ids)
+        print(words_emb.size())
+        print(sent_emb.size())
                         #-----------------------------------
                 #---------------------------------------------------------
         #-------------------------------------------------------------------------------
