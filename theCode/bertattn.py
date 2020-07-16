@@ -47,7 +47,6 @@ __C.DATA_DIR = '../data/birds'
 __C.GPU_ID = 0
 __C.CUDA = True
 __C.WORKERS = 1
-__C.RNN_TYPE = 'LSTM'   # 'GRU'
 __C.B_VALIDATION = False
 
 __C.TREE = edict()
@@ -90,8 +89,7 @@ __C.TEXT.WORDS_NUM = 18
 
 
 
-def get_imgs(img_path, imsize, bbox=None,
-                transform=None, normalize=None):
+def get_imgs(img_path, imsize, bbox=None, transform=None, normalize=None):
     img = Image.open(img_path).convert('RGB')
     width, height = img.size
     if bbox is not None:
@@ -419,7 +417,7 @@ def conv1x1(in_planes, out_planes, bias=False):
 class TextDataset(data.Dataset):
     def __init__(self, data_dir, split='train',
                     base_size=64,
-                    transform=None, target_transform=None, input_ids=None, segments_ids=None):
+                    transform=None, target_transform=None, input_ids=None, segments_ids=None, sentences=None):
         self.transform = transform
         self.norm = transforms.Compose([
             transforms.ToTensor(),
@@ -454,6 +452,7 @@ class TextDataset(data.Dataset):
 
         self.input_ids = input_ids
         self.segments_ids = segments_ids
+        self.sentences = sentences
 
     def load_bbox(self):
         data_dir = self.data_dir
@@ -640,117 +639,17 @@ class TextDataset(data.Dataset):
         sent_ix = random.randint(0, self.embeddings_num)
         new_sent_ix = index * self.embeddings_num + sent_ix
         caps, cap_len = self.get_caption(new_sent_ix)
+
+        caps_dec = []
+        for word in caps:
+            caps_dec.append(self.ixtoword[int(word)])
+
         return imgs, caps, cap_len, cls_id, key, self.input_ids[index], self.segments_ids[index]
 
 
     def __len__(self):
         return len(self.filenames)
 
-class RNN_ENCODER(nn.Module):
-    def __init__(self, ntoken, ninput=300, drop_prob=0.5,
-                    nhidden=128, nlayers=1, bidirectional=True):
-        super(RNN_ENCODER, self).__init__()
-        self.n_steps = cfg.TEXT.WORDS_NUM # max length and padded to captions= 18
-        self.ntoken = ntoken  # size of the dictionary = 5450
-        self.ninput = ninput  # size of each embedding vector = 300
-        self.drop_prob = drop_prob  # probability of an element to be zeroed = 0.5
-        self.nlayers = nlayers  # Number of recurrent layers =1
-        self.bidirectional = bidirectional # True
-        self.rnn_type = cfg.RNN_TYPE #LSTM
-        if bidirectional:
-            self.num_directions = 2
-        else:
-            self.num_directions = 1
-        # number of features in the hidden state
-        self.nhidden = nhidden // self.num_directions # 128
-
-        self.define_module()
-        self.init_weights()
-
-    def define_module(self):
-        self.encoder = nn.Embedding(self.ntoken, self.ninput)
-        self.drop = nn.Dropout(self.drop_prob)
-        if self.rnn_type == 'LSTM':
-            # dropout: If non-zero, introduces a dropout layer on
-            # the outputs of each RNN layer except the last layer
-            self.rnn = nn.LSTM(self.ninput, self.nhidden,
-                                self.nlayers, batch_first=True,
-                                dropout=self.drop_prob,
-                                bidirectional=self.bidirectional)
-        elif self.rnn_type == 'GRU':
-            self.rnn = nn.GRU(self.ninput, self.nhidden,
-                                self.nlayers, batch_first=True,
-                                dropout=self.drop_prob,
-                                bidirectional=self.bidirectional)
-        else:
-            raise NotImplementedError
-
-    def init_weights(self):
-        initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        # Do not need to initialize RNN parameters, which have been initialized
-        # http://pytorch.org/docs/master/_modules/torch/nn/modules/rnn.html#LSTM
-        # self.decoder.weight.data.uniform_(-initrange, initrange)
-        # self.decoder.bias.data.fill_(0)
-
-    def init_hidden(self, bsz):
-        weight = next(self.parameters()).data
-        if self.rnn_type == 'LSTM':
-            return (Variable(weight.new(self.nlayers * self.num_directions, bsz, self.nhidden).zero_()),
-                    Variable(weight.new(self.nlayers * self.num_directions,bsz, self.nhidden).zero_()))
-        else:
-            return Variable(weight.new(self.nlayers * self.num_directions,
-                                        bsz, self.nhidden).zero_())
-
-    def forward(self, captions, cap_lens, hidden, mask=None):
-        # input: torch.LongTensor of size batch x n_steps
-        # --> emb: batch x n_steps x ninput
-        emb = self.drop(self.encoder(captions))
-
-        #
-        # Returns: a PackedSequence object
-        cap_lens = cap_lens.data.tolist()
-        emb = pack_padded_sequence(emb, cap_lens, batch_first=True)
-        #emb[0]: a tensor of torch.Size([660, 300])
-        #emb[1]: a tensor of torch.Size([18])
-        #emb[2]: None
-        #emb[3]: None
-
-
-
-
-        # #hidden and memory (num_layers * num_directions, batch, hidden_size):
-        # tensor containing the initial hidden state for each element in batch.
-        # #output (batch, seq_len, hidden_size * num_directions)
-        # #or a PackedSequence object:
-        # tensor containing output features (h_t) from the last layer of RNN
-
-
-        output, hidden = self.rnn(emb, hidden)
-        #output[0]: a tensor of torch.Size([660, 256])
-        #output[1]: a tensor of torch.Size([18])
-        #output[2]: None
-        #output[3]: None
-        #hidden : a tuple of 2 tensors of torch.Size([2, 48, 128])
-
-
-        # PackedSequence object
-        # --> (batch, seq_len, hidden_size * num_directions)
-
-        output = pad_packed_sequence(output, batch_first=True)[0] # torch.Size([48, 18, 256])
-        
-        # output = self.drop(output)
-        # --> batch x hidden_size*num_directions x seq_len
-        
-        words_emb = output.transpose(1, 2) #torch.Size([48, 256, 18])
-        
-        # --> batch x num_directions*hidden_size
-        if self.rnn_type == 'LSTM':
-            sent_emb = hidden[0].transpose(0, 1).contiguous()#torch.Size([48, 2, 128])
-        else:
-            sent_emb = hidden.transpose(0, 1).contiguous()
-        sent_emb = sent_emb.view(-1, self.nhidden * self.num_directions)#torch.Size([48, 256])
-        return words_emb, sent_emb
 
 class CNN_ENCODER(nn.Module):
     def __init__(self, nef):
@@ -759,8 +658,10 @@ class CNN_ENCODER(nn.Module):
             self.nef = nef
         else:
             self.nef = 256  # define a uniform ranker
-
+        
+        print('CNN_ENCODER')
         model = models.inception_v3()
+        print('loaded_inception')
         url = 'https://download.pytorch.org/models/inception_v3_google-1a9a5a14.pth'
         model.load_state_dict(model_zoo.load_url(url))
         for param in model.parameters():
@@ -864,15 +765,15 @@ class BERT_ENCODER(nn.Module):
         super(BERT_ENCODER, self).__init__()
 
         
+        print('Bert_ENCODER')
+        
         model = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = True)
         for param in model.parameters():
             param.requires_grad = False
         print('Load pretrained model from  BertModel')
-        print(model)
 
         self.define_module(model)
         self.init_trainable_weights()
-
         self.bert_model = model
 
     def define_module(self, model):
@@ -889,10 +790,10 @@ class BERT_ENCODER(nn.Module):
         outputs = self.bert_model(b_input_ids, b_segments_ids)
         hidden_states = outputs[2]
 
-        a = torch.stack(hidden_states, dim=0)
+        word_embedding = torch.stack(hidden_states, dim=0)
 
 
-        word_embedding= self.word_bert_code(a)
+        word_embedding= self.word_bert_code(word_embedding)
 
 
         word_embedding = word_embedding.permute(1,3,0,2)
@@ -900,14 +801,12 @@ class BERT_ENCODER(nn.Module):
         word_embedding = word_embedding.sum(dim=2)
 
 
-        print ('Word Embedding Shape is: ' , word_embedding.size())
 
         token_vecs = hidden_states[-2]
 
-        # Calculate the average of all 64 token vectors.
+        # Calculate the average of all 18 token vectors.
         sentence_embedding = torch.mean(token_vecs, dim=1)
         sentence_embedding= self.sent_bert_code(sentence_embedding)
-        print('Sentence Embedding Shape is: ', sentence_embedding.size())
 
 
         return  word_embedding, sentence_embedding
@@ -948,8 +847,7 @@ def cosine_similarity(x1, x2, dim=1, eps=1e-8):
     w2 = torch.norm(x2, 2, dim)
     return (w12 / (w1 * w2).clamp(min=eps)).squeeze()
 
-def sent_loss(cnn_code, rnn_code, labels, class_ids,
-              batch_size, eps=1e-8):
+def sent_loss(cnn_code, rnn_code, labels, class_ids, batch_size, eps=1e-8):
     # ### Mask mis-match samples  ###
     # that come from the same class as the real sample ###
     masks = []
@@ -1105,13 +1003,11 @@ def func_attention(query, context, gamma1):
     return weightedContext, attn.view(batch_size, -1, ih, iw)
 
 
-def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch, ixtoword, image_dir, bert_encoder):
+def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, epoch, ixtoword, image_dir):
     train_function_start_time = time.time()
     cnn_model.train() #Sets the module in training mode.
     #rnn_model.train() #Sets the module in training mode.
-    
-    bert_encoder.cuda()
-    bert_encoder.eval()
+    bert_encoder.train()
     
     s_total_loss0 = 0
     s_total_loss1 = 0
@@ -1151,10 +1047,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         #-------------------------------------------------------------------------------
                 #---------------------------------------------------------
                         #-----------------------------------
-        print('BBBBBBBBBBBBBBBBBBEEEEEEEEEEEEEEEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRRRRRTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT')
         words_emb, sent_emb =bert_encoder(b_input_ids, b_segments_ids)
-        print(words_emb.size())
-        print(sent_emb.size())
                         #-----------------------------------
                 #---------------------------------------------------------
         #-------------------------------------------------------------------------------
@@ -1173,7 +1066,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
         #
         # `clip_grad_norm` helps prevent
         # the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(rnn_model.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
+        torch.nn.utils.clip_grad_norm(bert_encoder.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
         if step % UPDATE_INTERVAL == 0:
@@ -1212,14 +1105,12 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
             #Save image only every 8 epochs && Save it to The Drive
             if (epoch % 8 == 0):
                 print("bulding images")
-                img_set, _ = \
-                    build_super_images(imgs[-1].cpu(), captions,
-                                    ixtoword, attn_maps, att_sze)
+                img_set, _ = build_super_images(imgs[-1].cpu(), captions, ixtoword, attn_maps, att_sze)
                 if img_set is not None:
                     im = Image.fromarray(img_set)
                     fullpath = '%s/attention_maps%d.png' % (image_dir, step)
                     im.save(fullpath)
-                    mydriveimg = '/content/drive/My Drive/cubImage'
+                    mydriveimg = '/content/drive/My Drive/BertCUBImage'
                     drivepath = '%s/attention_maps%d.png' % (mydriveimg, epoch)
                     im.save(drivepath)
     print("keyTime |||||||||||||||||||||||||||||||")
@@ -1228,27 +1119,25 @@ def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch
     return count
 
 
-def evaluate(dataloader, cnn_model, rnn_model, batch_size):
+def evaluate(dataloader, cnn_model, bert_encoder, batch_size):
     cnn_model.eval()
-    rnn_model.eval()
+    bert_encoder.eval()
     s_total_loss = 0
     w_total_loss = 0
     for step, data in enumerate(dataloader, 0):
-        real_imgs, captions, cap_lens, class_ids, keys, input_ids, segments_ids = prepare_data(data)
+        real_imgs, captions, cap_lens, class_ids, keys, b_input_ids, b_segments_ids = prepare_data(data)
 
         words_features, sent_code = cnn_model(real_imgs[-1])
         # nef = words_features.size(1)
         # words_features = words_features.view(batch_size, nef, -1)
+        words_emb, sent_emb =bert_encoder(b_input_ids, b_segments_ids)
 
-        hidden = rnn_model.init_hidden(batch_size)
-        words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
 
-        w_loss0, w_loss1, attn = words_loss(words_features, words_emb, labels,
-                                            cap_lens, class_ids, batch_size)
+
+        w_loss0, w_loss1, attn = words_loss(words_features, words_emb, labels, cap_lens, class_ids, batch_size)
         w_total_loss += (w_loss0 + w_loss1).data
 
-        s_loss0, s_loss1 = \
-            sent_loss(sent_code, sent_emb, labels, class_ids, batch_size)
+        s_loss0, s_loss1 = sent_loss(sent_code, sent_emb, labels, class_ids, batch_size)
         s_total_loss += (s_loss0 + s_loss1).data
 
         if step == 50:
@@ -1262,13 +1151,14 @@ def evaluate(dataloader, cnn_model, rnn_model, batch_size):
 
 def build_models():
     # build model ############################################################
-    text_encoder = RNN_ENCODER(dataset.n_words, nhidden=cfg.TEXT.EMBEDDING_DIM)
+    #text_encoder = RNN_ENCODER(dataset.n_words, nhidden=cfg.TEXT.EMBEDDING_DIM)
     '''
     RNN_ENCODER(
     (encoder): Embedding(5450, 300)
     (drop): Dropout(p=0.5, inplace=False)
     (rnn): LSTM(300, 128, batch_first=True, dropout=0.5, bidirectional=True))
     '''
+    print('build_models')
     image_encoder = CNN_ENCODER(cfg.TEXT.EMBEDDING_DIM)
     bert_encoder = BERT_ENCODER()
 
@@ -1279,7 +1169,7 @@ def build_models():
     start_epoch = 0
     if cfg.TRAIN.NET_E != '':
         state_dict = torch.load(cfg.TRAIN.NET_E)
-        text_encoder.load_state_dict(state_dict)
+        bert_encoder.load_state_dict(state_dict)
         print('Load ', cfg.TRAIN.NET_E)
         #
         name = cfg.TRAIN.NET_E.replace('text_encoder', 'image_encoder')
@@ -1293,11 +1183,12 @@ def build_models():
         start_epoch = int(start_epoch) + 1
         print('start_epoch', start_epoch)
     if cfg.CUDA:
-        text_encoder = text_encoder.cuda()
+        #text_encoder = text_encoder.cuda()
         image_encoder = image_encoder.cuda()
         labels = labels.cuda()
+        bert_encoder = bert_encoder.cuda()
 
-    return text_encoder, image_encoder, labels, start_epoch, bert_encoder
+    return bert_encoder, image_encoder, labels, start_epoch
 
 
 __name__ = "__main__"
@@ -1326,7 +1217,7 @@ if __name__ == "__main__":
 
     image_transform = transforms.Compose([transforms.Scale(355), transforms.RandomCrop(imsize), transforms.RandomHorizontalFlip()])
     
-    dataset = TextDataset(cfg.DATA_DIR, 'train', base_size=cfg.TREE.BASE_SIZE, transform=image_transform, input_ids=input_ids, segments_ids=segments_ids)
+    dataset = TextDataset(cfg.DATA_DIR, 'train', base_size=cfg.TREE.BASE_SIZE, transform=image_transform, input_ids=input_ids, segments_ids=segments_ids, sentences=sentences )
     print(dataset.n_words, dataset.embeddings_num)
     assert dataset
 
@@ -1340,15 +1231,24 @@ if __name__ == "__main__":
     
 
     # # validation data #
-    dataset_val = TextDataset(cfg.DATA_DIR, 'test', base_size=cfg.TREE.BASE_SIZE,transform=image_transform)
+    dataset_val = TextDataset(cfg.DATA_DIR, 'test', base_size=cfg.TREE.BASE_SIZE,transform=image_transform, input_ids=input_ids, segments_ids=segments_ids, sentences=sentences)
+    print(dataset_val.n_words, dataset_val.embeddings_num)
+    assert dataset_val
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, drop_last=True,shuffle=True, num_workers=int(cfg.WORKERS))
 
     # Train ##############################################################
-    text_encoder, image_encoder, labels, start_epoch, bert_encoder = build_models()
-    para = list(text_encoder.parameters()) # 9 paramters
+    bert_encoder, image_encoder, labels, start_epoch = build_models()
+    para = []
+    
+    for v in bert_encoder.parameters(): # 4 parameters
+        if v.requires_grad:
+            para.append(v)
+    
     for v in image_encoder.parameters(): # 3 parameters
         if v.requires_grad:
             para.append(v)
+
+    print ('requires_grad =' , len(para))
     # optimizer = optim.Adam(para, lr=cfg.TRAIN.ENCODER_LR, betas=(0.5, 0.999))
     # At any point you can hit Ctrl + C to break out of training early.
 
@@ -1365,10 +1265,10 @@ if __name__ == "__main__":
             one_epoch_start_time = time.time()
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
-            count = train(dataloader, image_encoder, text_encoder, batch_size, labels, optimizer, epoch, dataset.ixtoword, image_dir, bert_encoder)
+            count = train(dataloader, image_encoder, bert_encoder, batch_size, labels, optimizer, epoch, dataset.ixtoword, image_dir)
             print('-' * 89)
             if len(dataloader_val) > 0:
-                s_loss, w_loss = evaluate(dataloader_val, image_encoder, text_encoder, batch_size)
+                s_loss, w_loss = evaluate(dataloader_val, image_encoder, bert_encoder, batch_size)
                 print('| end epoch {:3d} | valid loss ''{:5.2f} {:5.2f} | lr {:.5f}|'.format(epoch, s_loss, w_loss, lr))
             print('-' * 89)
             if lr > 0.0002 : #cfg.TRAIN.ENCODER_LR/10.:
@@ -1379,7 +1279,7 @@ if __name__ == "__main__":
             print("KeyTime |||||||||||||||||||||||||||||||")
 
             if (epoch % 8 == 0 or epoch == cfg.TRAIN.MAX_EPOCH or epoch == cfg.TRAIN.MAX_EPOCH-1 ):
-                mydrivemodel = '/content/drive/My Drive/cubModel'
+                mydrivemodel = '/content/drive/My Drive/BertCUBModel'
                 torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (model_dir, epoch))
                 torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
                 torch.save(bert_encoder.state_dict(), '%s/text_encoder%d.pth' % (model_dir, epoch))
