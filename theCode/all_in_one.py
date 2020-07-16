@@ -500,8 +500,7 @@ class TextDataset(data.Dataset):
                     if cnt == self.embeddings_num:
                         break
                 if cnt < self.embeddings_num:
-                    print('ERROR: the captions for %s less than %d'
-                          % (filenames[i], cnt))
+                    print('ERROR: the captions for %s less than %d'% (filenames[i], cnt))
         return all_captions
 
     def build_dictionary(self, train_captions, test_captions):
@@ -929,8 +928,7 @@ def sent_loss(cnn_code, rnn_code, labels, class_ids,
     return loss0, loss1
 
 
-def words_loss(img_features, words_emb, labels,
-               cap_lens, class_ids, batch_size):
+def words_loss(img_features, words_emb, labels, cap_lens, class_ids, batch_size):
     """
         words_emb(query): batch x nef x seq_len
         img_features(context): batch x nef x 17 x 17
@@ -939,7 +937,9 @@ def words_loss(img_features, words_emb, labels,
     att_maps = []
     similarities = []
     cap_lens = cap_lens.data.tolist()
+
     for i in range(batch_size):
+    
         if class_ids is not None:
             mask = (class_ids == class_ids[i]).astype(np.uint8)
             mask[i] = 0
@@ -980,6 +980,7 @@ def words_loss(img_features, words_emb, labels,
         # --> 1 x batch_size
         # similarities(i, j): the similarity between the i-th image and the j-th text description
         similarities.append(row_sim)
+
 
     # batch_size x batch_size
     similarities = torch.cat(similarities, 1)
@@ -1042,8 +1043,7 @@ def func_attention(query, context, gamma1):
     return weightedContext, attn.view(batch_size, -1, ih, iw)
 
 
-def train(dataloader, cnn_model, rnn_model, batch_size,
-            labels, optimizer, epoch, ixtoword, image_dir):
+def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch, ixtoword, image_dir):
     train_function_start_time = time.time()
     cnn_model.train() #Sets the module in training mode.
     rnn_model.train() #Sets the module in training mode.
@@ -1058,7 +1058,11 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
     # print("keyword |||||||||||||||||||||||||||||||")
     count = (epoch + 1) * len(dataloader)
     start_time = time.time()
+
+
     for step, data in enumerate(dataloader, 0):
+    
+    
         # Loading the first batch (number of batches/steps in an epoch is 183)
         rnn_model.zero_grad()
         cnn_model.zero_grad()
@@ -1078,14 +1082,12 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         # sent_emb: batch_size x nef
         words_emb, sent_emb = rnn_model(captions, cap_lens, hidden)
 
-        w_loss0, w_loss1, attn_maps = words_loss(words_features, words_emb, labels,
-                                                    cap_lens, class_ids, batch_size)
+        w_loss0, w_loss1, attn_maps = words_loss(words_features, words_emb, labels, cap_lens, class_ids, batch_size)
         w_total_loss0 += w_loss0.data
         w_total_loss1 += w_loss1.data
         loss = w_loss0 + w_loss1
 
-        s_loss0, s_loss1 = \
-            sent_loss(sent_code, sent_emb, labels, class_ids, batch_size)
+        s_loss0, s_loss1 = sent_loss(sent_code, sent_emb, labels, class_ids, batch_size)
         loss += s_loss0 + s_loss1
         s_total_loss0 += s_loss0.data
         s_total_loss1 += s_loss1.data
@@ -1094,8 +1096,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         #
         # `clip_grad_norm` helps prevent
         # the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(rnn_model.parameters(),
-                                        cfg.TRAIN.RNN_GRAD_CLIP)
+        torch.nn.utils.clip_grad_norm(rnn_model.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
         if step % UPDATE_INTERVAL == 0:
@@ -1280,20 +1281,18 @@ if __name__ == "__main__":
         print("Start_epoch : " , start_epoch)
         print("cfg.TRAIN.MAX_EPOCH : " , cfg.TRAIN.MAX_EPOCH )
         print("keyword |||||||||||||||||||||||||||||||")
+
+
         for epoch in range(start_epoch, cfg.TRAIN.MAX_EPOCH):
+            
             one_epoch_start_time = time.time()
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
-            count = train(dataloader, image_encoder, text_encoder,
-                            batch_size, labels, optimizer, epoch,
-                            dataset.ixtoword, image_dir)
+            count = train(dataloader, image_encoder, text_encoder, batch_size, labels, optimizer, epoch, dataset.ixtoword, image_dir)
             print('-' * 89)
             if len(dataloader_val) > 0:
-                s_loss, w_loss = evaluate(dataloader_val, image_encoder,
-                                            text_encoder, batch_size)
-                print('| end epoch {:3d} | valid loss '
-                        '{:5.2f} {:5.2f} | lr {:.5f}|'
-                        .format(epoch, s_loss, w_loss, lr))
+                s_loss, w_loss = evaluate(dataloader_val, image_encoder, text_encoder, batch_size)
+                print('| end epoch {:3d} | valid loss ''{:5.2f} {:5.2f} | lr {:.5f}|'.format(epoch, s_loss, w_loss, lr))
             print('-' * 89)
             if lr > 0.0002 : #cfg.TRAIN.ENCODER_LR/10.:
                 lr *= 0.98
@@ -1303,17 +1302,14 @@ if __name__ == "__main__":
             print("KeyTime |||||||||||||||||||||||||||||||")
 
             if (epoch % 8 == 0 or epoch == cfg.TRAIN.MAX_EPOCH or epoch == cfg.TRAIN.MAX_EPOCH-1 ):
-                torch.save(image_encoder.state_dict(),
-                            '%s/image_encoder%d.pth' % (model_dir, epoch))
                 mydrivemodel = '/content/drive/My Drive/cubModel'
-                torch.save(image_encoder.state_dict(),
-                            '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
-                torch.save(text_encoder.state_dict(),
-                            '%s/text_encoder%d.pth' % (model_dir, epoch))
-                torch.save(text_encoder.state_dict(),
-                            '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
+                torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (model_dir, epoch))
+                torch.save(image_encoder.state_dict(), '%s/image_encoder%d.pth' % (mydrivemodel, epoch))
+                torch.save(text_encoder.state_dict(), '%s/text_encoder%d.pth' % (model_dir, epoch))
+                torch.save(text_encoder.state_dict(), '%s/text_encoder%d.pth' % (mydrivemodel, epoch))
                 print('Save G/Ds models.')
-                
+
+
     except KeyboardInterrupt:
         print('-' * 89)
         print('Exiting from training early')
