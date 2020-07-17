@@ -1103,7 +1103,7 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
             start_time = time.time()
             # attention Maps
             #Save image only every 8 epochs && Save it to The Drive
-            if (epoch % 20 == 0):
+            if (epoch % 20 == 0 and epoch > 0):
                 print("bulding images")
                 img_set, _ = build_super_images(imgs[-1].cpu(), captions, ixtoword, attn_maps, att_sze)
                 if img_set is not None:
