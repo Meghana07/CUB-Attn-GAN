@@ -262,7 +262,9 @@ if __name__ == "__main__":
     mydataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, drop_last=True, shuffle=False, num_workers=int(cfg.WORKERS))
     data = next(iter(mydataloader))
     imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
-    print('imgs size', imgs[0].size(), "first three:", imgs[0][0][0][0][0:3])
+    filename = dataset.filenames
+    print('filename size: ', len(filename), 'fist three: ', filename[0:3])
+    print('imgs size: ', imgs[0].size(), "first three:", imgs[0][0][0][0][0:3])
     print('captions size: ', captions.size(), 'first three:', captions[0][0:3])
     print('cap_lens size: ', cap_lens.size(), 'first three:', cap_lens[0:3])
     print('class_ids size: ', len(class_ids), 'first three:', class_ids[0:3] )
