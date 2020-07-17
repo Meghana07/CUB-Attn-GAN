@@ -17,15 +17,19 @@ import numpy as np
 import torch
 import torchvision.transforms as transforms
 
+#Add The Absolute Path of "main.py" To The List of Path Variables
 dir_path = (os.path.abspath(os.path.join(os.path.realpath(__file__), './.')))
 sys.path.append(dir_path)
 
 
+#Create args of four elements and their default values
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a AttnGAN network')
-    parser.add_argument('--cfg', dest='cfg_file',
+    parser.add_argument('--cfg',
+                        dest='cfg_file',
                         help='optional config file',
-                        default='cfg/bird_attn2.yml', type=str)
+                        default='cfg/bird_attn2.yml',
+                        type=str)
     parser.add_argument('--gpu', dest='gpu_id', type=int, default=-1)
     parser.add_argument('--data_dir', dest='data_dir', type=str, default='')
     parser.add_argument('--manualSeed', type=int, help='manual seed')
@@ -119,18 +123,22 @@ if __name__ == "__main__":
         split_dir = 'test'
 
     # Get data loader
-    imsize = cfg.TREE.BASE_SIZE * (2 ** (cfg.TREE.BRANCH_NUM - 1))
+    imsize = cfg.TREE.BASE_SIZE * (2**(cfg.TREE.BRANCH_NUM - 1))
     image_transform = transforms.Compose([
         transforms.Scale(int(imsize * 76 / 64)),
         transforms.RandomCrop(imsize),
-        transforms.RandomHorizontalFlip()])
-    dataset = TextDataset(cfg.DATA_DIR, split_dir,
+        transforms.RandomHorizontalFlip()
+    ])
+    dataset = TextDataset(cfg.DATA_DIR,
+                          split_dir,
                           base_size=cfg.TREE.BASE_SIZE,
                           transform=image_transform)
     assert dataset
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=cfg.TRAIN.BATCH_SIZE,
-        drop_last=True, shuffle=bshuffle, num_workers=int(cfg.WORKERS))
+    dataloader = torch.utils.data.DataLoader(dataset,
+                                             batch_size=cfg.TRAIN.BATCH_SIZE,
+                                             drop_last=True,
+                                             shuffle=bshuffle,
+                                             num_workers=int(cfg.WORKERS))
 
     # Define models and go to train/evaluate
     algo = trainer(output_dir, dataloader, dataset.n_words, dataset.ixtoword)
@@ -141,8 +149,10 @@ if __name__ == "__main__":
     else:
         '''generate images from pre-extracted embeddings'''
         if cfg.B_VALIDATION:
-            algo.sampling(split_dir)  # generate images for the whole valid dataset
+            algo.sampling(
+                split_dir)  # generate images for the whole valid dataset
         else:
-            gen_example(dataset.wordtoix, algo)  # generate images for customized captions
+            gen_example(dataset.wordtoix,
+                        algo)  # generate images for customized captions
     end_t = time.time()
     print('Total time for training:', end_t - start_t)
