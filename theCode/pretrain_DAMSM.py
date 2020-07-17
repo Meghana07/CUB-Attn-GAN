@@ -46,8 +46,7 @@ def parse_args():
     return args
 
 
-def train(dataloader, cnn_model, rnn_model, batch_size,
-          labels, optimizer, epoch, ixtoword, image_dir):
+def train(dataloader, cnn_model, rnn_model, batch_size, labels, optimizer, epoch, ixtoword, image_dir):
     train_function_start_time = time.time()
     cnn_model.train()
     rnn_model.train()
@@ -67,8 +66,7 @@ def train(dataloader, cnn_model, rnn_model, batch_size,
         rnn_model.zero_grad()
         cnn_model.zero_grad()
 
-        imgs, captions, cap_lens, \
-            class_ids, keys = prepare_data(data)
+        imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
 
 
         # words_features: batch_size x nef x 17 x 17
@@ -299,9 +297,7 @@ if __name__ == "__main__":
             one_epoch_start_time = time.time()
             optimizer = optim.Adam(para, lr=lr, betas=(0.5, 0.999))
             epoch_start_time = time.time()
-            count = train(dataloader, image_encoder, text_encoder,
-                            batch_size, labels, optimizer, epoch,
-                            dataset.ixtoword, image_dir)
+            count = train(dataloader, image_encoder, text_encoder, batch_size, labels, optimizer, epoch, dataset.ixtoword, image_dir)
             print('-' * 89)
             if len(dataloader_val) > 0:
                 s_loss, w_loss = evaluate(dataloader_val, image_encoder,
