@@ -259,7 +259,7 @@ if __name__ == "__main__":
     assert dataset
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=int(cfg.WORKERS))
     
-    mydataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, drop_last=True, shuffle=True, num_workers=int(cfg.WORKERS))
+    mydataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, drop_last=True, shuffle=False, num_workers=int(cfg.WORKERS))
     data = next(iter(mydataloader))
     imgs, captions, cap_lens, class_ids, keys = prepare_data(data)
     print('imgs size', imgs[0].size(), "first three:", imgs[0][0][0][0][0:3])
