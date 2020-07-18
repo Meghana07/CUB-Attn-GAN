@@ -777,12 +777,16 @@ class BERT_ENCODER(nn.Module):
         self.bert_model = model
 
     def define_module(self, model):
-        self.word_bert_code = nn.Linear(768, 256)
+        self.word_bert_code1 = nn.Linear(768, 1024)
+        self.word_bert_code2 = nn.Linear(1024, 512)
+        self.word_bert_code3 = nn.Linear(512, 256)
         self.sent_bert_code = nn.Linear(768, 256)
+        self.m = nn.Tanh()
 
     def init_trainable_weights(self):
         initrange = 0.1
-        self.word_bert_code.weight.data.uniform_(-initrange, initrange)
+        self.word_bert_code1.weight.data.uniform_(-initrange, initrange)
+        self.word_bert_code2.weight.data.uniform_(-initrange, initrange)
         self.sent_bert_code.weight.data.uniform_(-initrange, initrange)
 
     def forward(self,  b_input_ids, b_segments_ids):
@@ -793,7 +797,11 @@ class BERT_ENCODER(nn.Module):
         word_embedding = torch.stack(hidden_states, dim=0)
 
 
-        word_embedding= self.word_bert_code(word_embedding)
+        word_embedding= self.word_bert_code1(word_embedding)
+        word_embedding= self.m(word_embedding)
+        word_embedding= self.word_bert_code2(word_embedding)
+        word_embedding= self.m(word_embedding)
+        word_embedding= self.word_bert_code3(word_embedding)
 
 
         word_embedding = word_embedding.permute(1,3,0,2)
@@ -1069,6 +1077,12 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
         #torch.nn.utils.clip_grad_norm(bert_encoder.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
+        
+        if step % 10 == 0:
+          print ('Max of word features', words_emb.max())
+          print ('Min of word features', words_emb.min())
+
+
         if step % UPDATE_INTERVAL == 0:
             count = epoch * len(dataloader) + step
 
@@ -1254,6 +1268,7 @@ if __name__ == "__main__":
 
     try:
         lr = cfg.TRAIN.ENCODER_LR #0.002
+        lr = 0.00002
         print("keyword |||||||||||||||||||||||||||||||")
         print("Start_epoch : " , start_epoch)
         print("cfg.TRAIN.MAX_EPOCH : " , cfg.TRAIN.MAX_EPOCH )
