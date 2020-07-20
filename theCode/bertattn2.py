@@ -778,19 +778,19 @@ class BERT_ENCODER(nn.Module):
         self.bert_model = model
 
     def define_module(self, model):
-        self.word_bert_code1 = nn.Linear(3072, 2048)
-        self.word_bert_code2 = nn.Linear(2048, 1024)
-        self.word_bert_code3 = nn.Linear(1024, 512)
-        self.word_bert_code4 = nn.Linear(512, 256)
+        self.word_bert_code1 = nn.Linear(3072, 256)
+        # self.word_bert_code2 = nn.Linear(2048, 1024)
+        # self.word_bert_code3 = nn.Linear(1024, 512)
+        # self.word_bert_code4 = nn.Linear(512, 256)
         self.sent_bert_code = nn.Linear(768, 256)
         self.m = nn.Tanh()
 
     def init_trainable_weights(self):
         initrange = 0.1
-        self.word_bert_code1.weight.data.uniform_(0, 0)
-        self.word_bert_code2.weight.data.uniform_(0, 0)
-        self.word_bert_code3.weight.data.uniform_(0, 0)
-        self.word_bert_code4.weight.data.uniform_(0, 0)
+        self.word_bert_code1.weight.data.uniform_(-0.1, 0.1)
+        # self.word_bert_code2.weight.data.uniform_(0, 0)
+        # self.word_bert_code3.weight.data.uniform_(0, 0)
+        # self.word_bert_code4.weight.data.uniform_(0, 0)
         self.sent_bert_code.weight.data.uniform_(-initrange, initrange)
 
     def forward(self,  b_input_ids, b_segments_ids):
@@ -817,9 +817,9 @@ class BERT_ENCODER(nn.Module):
 
 
         word_embedding= self.m(self.word_bert_code1(word_embedding))
-        word_embedding= self.m(self.word_bert_code2(word_embedding))
-        word_embedding= self.m(self.word_bert_code3(word_embedding))
-        word_embedding= self.m(self.word_bert_code4(word_embedding))
+        # word_embedding= self.m(self.word_bert_code2(word_embedding))
+        # word_embedding= self.m(self.word_bert_code3(word_embedding))
+        # word_embedding= self.m(self.word_bert_code4(word_embedding))
 
         word_embedding = word_embedding.permute(0,2,1)
 
@@ -1093,11 +1093,11 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
         #torch.nn.utils.clip_grad_norm(bert_encoder.parameters(), cfg.TRAIN.RNN_GRAD_CLIP)
         optimizer.step()
 
-        
-        if step % 40 == 0:
-            
+
+        if step % UPDATE_INTERVAL == 0:
             print ('Max of word features', words_emb.max())
             print ('Min of word features', words_emb.min())
+            
             count = epoch * len(dataloader) + step
 
             # print ("====================================================")
@@ -1229,7 +1229,7 @@ def build_models2():
     (rnn): LSTM(300, 128, batch_first=True, dropout=0.5, bidirectional=True))
     '''
     print('build_models')
-    #image_encoder = CNN_ENCODER(cfg.TEXT.EMBEDDING_DIM)
+    image_encoder = myimage_encoder
     bert_encoder = BERT_ENCODER()
 
     labels = Variable(torch.LongTensor(range(batch_size)))
@@ -1243,7 +1243,7 @@ def build_models2():
         labels = labels.cuda()
         bert_encoder = bert_encoder.cuda()
 
-    return bert_encoder, labels, start_epoch
+    return bert_encoder,image_encoder, labels, start_epoch
 
 
 __name__ = "__main__"
@@ -1251,7 +1251,7 @@ if __name__ == "__main__":
     print('Using config:')
     pprint.pprint(cfg)
 
-    UPDATE_INTERVAL = 200
+    UPDATE_INTERVAL = 60
 
     ##########################################################################
     now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -1292,8 +1292,8 @@ if __name__ == "__main__":
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, drop_last=True,shuffle=True, num_workers=int(cfg.WORKERS))
 
     # Train ##############################################################
-    #bert_encoder, image_encoder, labels, start_epoch = build_models()
-    bert_encoder, labels, start_epoch = build_models2()
+    bert_encoder, image_encoder, labels, start_epoch = build_models()
+    #bert_encoder,image_encoder, labels, start_epoch = build_models2()
     para = []
     
     for v in bert_encoder.parameters(): # 4 parameters
@@ -1310,7 +1310,7 @@ if __name__ == "__main__":
 
     try:
         lr = cfg.TRAIN.ENCODER_LR #0.002
-        lr = 0.001
+        lr = 0.02
         print("keyword |||||||||||||||||||||||||||||||")
         print("Start_epoch : " , start_epoch)
         print("cfg.TRAIN.MAX_EPOCH : " , cfg.TRAIN.MAX_EPOCH )
