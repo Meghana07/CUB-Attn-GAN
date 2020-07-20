@@ -777,9 +777,8 @@ class BERT_ENCODER(nn.Module):
         self.bert_model = model
 
     def define_module(self, model):
-        self.word_bert_code1 = nn.Linear(768, 1024)
-        self.word_bert_code2 = nn.Linear(1024, 512)
-        self.word_bert_code3 = nn.Linear(512, 256)
+        self.word_bert_code1 = nn.Linear(768, 512)
+        self.word_bert_code2 = nn.Linear(512, 256)
         self.sent_bert_code = nn.Linear(768, 256)
         self.m = nn.Tanh()
 
@@ -795,18 +794,28 @@ class BERT_ENCODER(nn.Module):
         hidden_states = outputs[2]
 
         word_embedding = torch.stack(hidden_states, dim=0)
+        word_embedding = word_embedding.permute(1,2,0,3)
+
+        all_samples= []
+        for sample in word_embedding:
+            token_vecs_sum = []
+            for token in sample:
+                sum_vec = torch.sum(token[-4:], dim=0)
+                token_vecs_sum.append(sum_vec)
+            all_samples.append(token_vecs_sum)
+
+        a = []
+        for i in range (len(all_samples)):
+            a.append(torch.stack(all_samples[i]))
+
+        word_embedding = torch.stack(a)
 
 
         word_embedding= self.word_bert_code1(word_embedding)
-        word_embedding= self.m(word_embedding)
         word_embedding= self.word_bert_code2(word_embedding)
-        word_embedding= self.m(word_embedding)
-        word_embedding= self.word_bert_code3(word_embedding)
+        word_embedding = word_embedding.permute(0,2,1)
 
 
-        word_embedding = word_embedding.permute(1,3,0,2)
-
-        word_embedding = word_embedding.sum(dim=2)
 
 
 
@@ -1078,12 +1087,10 @@ def train(dataloader, cnn_model, bert_encoder, batch_size, labels, optimizer, ep
         optimizer.step()
 
         
-        if step % 10 == 0:
-          print ('Max of word features', words_emb.max())
-          print ('Min of word features', words_emb.min())
-
-
         if step % UPDATE_INTERVAL == 0:
+            
+            print ('Max of word features', words_emb.max())
+            print ('Min of word features', words_emb.min())
             count = epoch * len(dataloader) + step
 
             # print ("====================================================")
@@ -1205,6 +1212,33 @@ def build_models():
     return bert_encoder, image_encoder, labels, start_epoch
 
 
+def build_models2():
+    # build model ############################################################
+    #text_encoder = RNN_ENCODER(dataset.n_words, nhidden=cfg.TEXT.EMBEDDING_DIM)
+    '''
+    RNN_ENCODER(
+    (encoder): Embedding(5450, 300)
+    (drop): Dropout(p=0.5, inplace=False)
+    (rnn): LSTM(300, 128, batch_first=True, dropout=0.5, bidirectional=True))
+    '''
+    print('build_models')
+    #image_encoder = CNN_ENCODER(cfg.TEXT.EMBEDDING_DIM)
+    bert_encoder = BERT_ENCODER()
+
+    labels = Variable(torch.LongTensor(range(batch_size)))
+    '''
+    A tensor of [0,1,2,3,...,47]
+    '''
+    start_epoch = 0
+    if cfg.CUDA:
+        #text_encoder = text_encoder.cuda()
+        #image_encoder = image_encoder.cuda()
+        labels = labels.cuda()
+        bert_encoder = bert_encoder.cuda()
+
+    return bert_encoder, labels, start_epoch
+
+
 __name__ = "__main__"
 if __name__ == "__main__":
     print('Using config:')
@@ -1251,7 +1285,8 @@ if __name__ == "__main__":
     dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=batch_size, drop_last=True,shuffle=True, num_workers=int(cfg.WORKERS))
 
     # Train ##############################################################
-    bert_encoder, image_encoder, labels, start_epoch = build_models()
+    #bert_encoder, image_encoder, labels, start_epoch = build_models()
+    bert_encoder, labels, start_epoch = build_models2()
     para = []
     
     for v in bert_encoder.parameters(): # 4 parameters
